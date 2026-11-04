@@ -6,16 +6,15 @@ like RocketSim's, so most RocketSim scripts run with one changed import.
 ![How catSim gets its game data](docs/how-it-works.svg)
 
 > **Status: first release (0.1.0).** Soccar on Stadium_P and UF_Night_P at 120 ticks a second. The dumper is tested
-> on Steam installs; the Epic Games edition is supported but **not yet tested on a real Epic install**. Download
-> the wheels from the [Releases](../../releases) page.
+> on Steam installs; the Epic Games edition is supported but **not yet tested on a real Epic install**. On PyPI as
+> [`catsim-rl`](https://pypi.org/project/catsim-rl/) (the name `catsim` there is an unrelated project).
 
 ## Five minutes to a first simulation
 
 **1. Install** (Windows or Linux, 64-bit, Python 3.10 or newer):
 
 ```
-pip install catsim-0.1.0-cp310-abi3-win_amd64.whl        # or the linux_x86_64 wheel
-pip install cryptography                                 # the dumper uses it to decrypt the game's packages quickly
+pip install "catsim-rl[dump]"       # imports as `catsim`; [dump] adds cryptography, which the dumper uses to decrypt fast
 ```
 
 **2. Get the key file.** Rocket League's package files are encrypted, and catSim includes no keys. The community
@@ -78,8 +77,8 @@ exact.
 You need Rust 1.95 and Python 3.10+.
 
 ```
-python tools/build_wheel.py          # builds engine/python and packs dist/catsim-*.whl
-pip install dist/catsim-*.whl
+python tools/build_wheel.py          # builds engine/python and packs dist/catsim_rl-*.whl
+pip install dist/catsim_rl-*.whl
 python -m pytest tests               # set CATSIM_DATA=catsim_data for the API tests
 ```
 

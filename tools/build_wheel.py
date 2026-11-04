@@ -17,7 +17,9 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-NAME, VERSION = "catsim", "0.1.0"
+NAME, VERSION = "catsim", "0.1.0"        # NAME: the import package
+DIST = "catsim-rl"                          # the name on PyPI ("catsim" there is an unrelated project)
+DIST_FILE = DIST.replace("-", "_")
 SKIP = {"__pycache__"}
 
 
@@ -29,7 +31,7 @@ def tag() -> str:
     raise SystemExit(f"no wheel recipe for {sys.platform} {platform.machine()}")
 
 
-def build(jobs: int) -> Path:
+def build(jobs: int, online: bool = False) -> Path:
     env = dict(os.environ, PYO3_PYTHON=sys.executable, CARGO_BUILD_JOBS=str(jobs))
     # Keep the builder's own paths (home folder, toolchain, checkout) out of the compiled module. RUSTFLAGS replaces
     # engine/.cargo/config.toml's flags, so the CPU level is repeated here.
@@ -42,7 +44,7 @@ def build(jobs: int) -> Path:
     if sys.platform == "win32":
         flags += ["-C", "link-arg=/PDBALTPATH:%_PDB%"]
     env["RUSTFLAGS"] = " ".join(flags)
-    subprocess.run(["cargo", "build", "--release", "--offline", "-p", "catsim_python", "-j", str(jobs)],
+    subprocess.run(["cargo", "build", "--release", *([] if online else ["--offline"]), "-p", "catsim_python", "-j", str(jobs)],
                    cwd=ROOT / "engine", env=env, check=True)
     tgt = Path(env.get("CARGO_TARGET_DIR", ROOT / "engine" / "target")) / "release"
     lib = tgt / ("_native.dll" if sys.platform == "win32" else "lib_native.so")
@@ -61,9 +63,11 @@ def main():
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--out", type=Path, default=ROOT / "dist")
     ap.add_argument("--lib", type=Path, help="use this already-built library instead of building")
+    ap.add_argument("--tag", help="wheel tag instead of this machine's (e.g. cp310-abi3-manylinux_2_28_x86_64 in CI)")
+    ap.add_argument("--online", action="store_true", help="let cargo fetch crates (CI); the default builds offline")
     a = ap.parse_args()
-    lib = a.lib or build(a.jobs)
-    t = tag()
+    lib = a.lib or build(a.jobs, a.online)
+    t = a.tag or tag()
     files: dict[str, bytes] = {}
     pkg = ROOT / "python" / NAME
     for p in sorted(pkg.rglob("*")):
@@ -71,13 +75,14 @@ def main():
             files[f"{NAME}/{p.relative_to(pkg).as_posix()}"] = p.read_bytes()
     files[f"{NAME}/_native.pyd" if sys.platform == "win32" else f"{NAME}/_native.abi3.so"] = lib.read_bytes()
     readme = (ROOT / "README.md").read_text(encoding="utf-8") if (ROOT / "README.md").exists() else ""
-    dist = f"{NAME}-{VERSION}.dist-info"
+    dist = f"{DIST_FILE}-{VERSION}.dist-info"
     files[f"{dist}/METADATA"] = (
         "Metadata-Version: 2.1\n"
-        f"Name: {NAME}\nVersion: {VERSION}\n"
+        f"Name: {DIST}\nVersion: {VERSION}\n"
         "Summary: A bit-exact Rocket League physics simulator with a RocketSim-style Python API\n"
         "License: MIT\n"
         "Author: adventure-gpt\n"
+        "Project-URL: Source, https://github.com/adventure-gpt/catsim-public\n"
         "Requires-Python: >=3.10\n"
         "Provides-Extra: dump\nRequires-Dist: cryptography; extra == \"dump\"\n"
         "Description-Content-Type: text/markdown\n\n" + readme).encode()
@@ -88,7 +93,7 @@ def main():
     rec = [record_line(k, v) for k, v in files.items()] + [f"{dist}/RECORD,,"]
     files[f"{dist}/RECORD"] = ("\n".join(rec) + "\n").encode()
     a.out.mkdir(parents=True, exist_ok=True)
-    whl = a.out / f"{NAME}-{VERSION}-{t}.whl"
+    whl = a.out / f"{DIST_FILE}-{VERSION}-{t}.whl"
     with zipfile.ZipFile(whl, "w", zipfile.ZIP_DEFLATED) as z:
         for k, v in files.items():
             z.writestr(k, v)

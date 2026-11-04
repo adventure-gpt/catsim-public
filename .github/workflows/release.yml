@@ -1,0 +1,55 @@
+# Builds the Windows and manylinux wheels and publishes them to PyPI as catsim-rl (trusted publishing, no tokens).
+# Runs when a GitHub release is published, or by hand (Actions > release > Run workflow).
+name: release
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Rust toolchain (engine/rust-toolchain.toml)
+        working-directory: engine
+        run: rustup show
+      - run: python tools/build_wheel.py --online --jobs 4 --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-windows
+          path: dist/*.whl
+  linux:
+    runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux_2_28_x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (engine/rust-toolchain.toml)
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - working-directory: engine
+        run: rustup show
+      - run: /opt/python/cp310-cp310/bin/python tools/build_wheel.py --online --jobs 4 --out dist --tag cp310-abi3-manylinux_2_28_x86_64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-linux
+          path: dist/*.whl
+  publish:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          merge-multiple: true
+          path: dist
+      - run: ls -l dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
