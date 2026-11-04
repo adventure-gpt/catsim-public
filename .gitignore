@@ -1,0 +1,15 @@
+engine/target/
+dist/
+build/
+__pycache__/
+*.pyc
+*.pyd
+*.so
+*.dll
+.pytest_cache/
+# game data made by the dumper never goes in git
+catsim_data/
+*.cmf
+tables.txt
+arena.txt
+keys.txt

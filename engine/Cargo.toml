@@ -1,0 +1,23 @@
+[workspace]
+members = ["core", "reference", "proof", "python"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+license = "MIT"
+authors = ["adventure-gpt"]
+
+# Full optimisation, no fast-math of any kind: rustc never contracts or reorders floats.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
+panic = "unwind"
+incremental = false
+
+[profile.test]
+opt-level = 2

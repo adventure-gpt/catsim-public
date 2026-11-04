@@ -1,0 +1,60 @@
+[package]
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+name = "catsim_proof"
+
+[dependencies]
+fast = { package = "catsim", path = "../core", features = ["flow"] }
+scalar = { package = "catsim_reference", path = "../reference", features = ["flow"] }
+
+[[bin]]
+name = "catsim_fuzz"
+path = "src/main.rs"
+
+[[bin]]
+name = "catsim_crt"
+path = "src/crt.rs"
+
+[[bin]]
+name = "catsim_arithmetic"
+path = "src/arithmetic.rs"
+
+[[bin]]
+name = "catsim_solver_fixedpoint"
+path = "src/fixedpoint.rs"
+
+[[bin]]
+name = "catsim_sweep_storage"
+path = "src/sweep.rs"
+
+[[bin]]
+name = "catsim_wheel_lanes"
+path = "src/wheels.rs"
+
+[[bin]]
+name = "catsim_mesh_rays"
+path = "src/mesh_rays.rs"
+
+[[bin]]
+name = "catsim_stats"
+path = "src/stats.rs"
+
+[[bin]]
+name = "catsim_bench"
+path = "src/bench.rs"
+
+[features]
+profile = ["fast/profile"]
+
+[[bin]]
+name = "catsim_ring"
+path = "src/ring.rs"
+
+[[bin]]
+name = "catsim_clear"
+path = "src/clear.rs"
+
+[[bin]]
+name = "catsim_goalphase"
+path = "src/goalphase.rs"

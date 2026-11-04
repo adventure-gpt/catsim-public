@@ -1,0 +1,4 @@
+# x86-64-v2 (SSE4.2, still the legacy SSE encoding): instruction selection only. AVX encodings (x86-64-v3)
+# change a NaN's sign bit in one solver path, so they are not used. RUSTFLAGS in the environment replaces this.
+[build]
+rustflags = ["-C", "target-cpu=x86-64-v2"]

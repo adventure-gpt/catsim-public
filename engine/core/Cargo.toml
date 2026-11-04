@@ -1,0 +1,27 @@
+[package]
+name = "catsim"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "catSim: a bit-exact Rocket League physics engine (fast engine)"
+
+[lib]
+doctest = false
+
+[features]
+default = []
+profile = []
+narrow = []
+collide = ["narrow"]
+dynamics_core = []
+dynamics = ["collide", "dynamics_core"]
+car_core = []
+car = ["dynamics", "car_core"]
+flow = ["car"]
+all = ["flow"]
+trace = []
+
+[dependencies]
