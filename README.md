@@ -17,10 +17,11 @@ like RocketSim's, so most RocketSim scripts run with one changed import.
 pip install "catsim-rl[dump]"       # imports as `catsim`; [dump] adds cryptography, which the dumper uses to decrypt fast
 ```
 
-**2. Get the key file.** Rocket League's package files are encrypted, and catSim includes no keys. The community
-tools that open Rocket League's `.upk` packages (the UPK decryptors and asset tools modders use) come with a
-`keys.txt`: one key per line. If you have one of those tools, you already have the file. catSim never downloads
-keys.
+**2. Get the key file.** Rocket League's package files are encrypted, and catSim includes no keys. Download
+`keys.txt` from [CrunchyRL/RLUPKTools](https://github.com/CrunchyRL/RLUPKTools), the Rocket League modding
+community's package tools (the same kind of tools map makers use, listed on the
+[Rocket League Modding Wiki](https://rocketleaguemoddingwiki.github.io/pages/software.html)). catSim never
+downloads keys itself.
 
 **3. Make the game data** from your own copy of Rocket League (Steam or Epic):
 
@@ -91,7 +92,8 @@ The engine's own proof: `cargo run --release -p catsim_proof --bin catsim_fuzz -
   and state fields follow theirs so existing code keeps working. catSim's engine is separate code.
 - The physics layer follows the algorithms of the **Bullet** physics library (zlib licence), which the game
   itself uses.
-- The community's Rocket League package tools, whose key file the dumper reads.
+- The Rocket League modding community's package tools ([CrunchyRL/RLUPKTools](https://github.com/CrunchyRL/RLUPKTools),
+  [AltimorTASDK/RLUPKTool](https://github.com/AltimorTASDK/RLUPKTool)), whose key file the dumper reads.
 - [docs/PROVENANCE.md](docs/PROVENANCE.md) says where every piece of catSim comes from.
 
 ## License

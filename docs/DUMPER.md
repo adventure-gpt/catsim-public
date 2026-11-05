@@ -32,8 +32,9 @@ In this order, the first one found wins (`--list` shows them all):
 ## The key file
 
 The game's packages keep their tables encrypted (AES-256). The keys are not stored as plain bytes in the game's
-files, and catSim does not include them. The community tools that open Rocket League's packages (the UPK
-decryptors and asset tools modders use) come with a `keys.txt`; use that file. Its format: one key per line,
+files, and catSim does not include them. Use the `keys.txt` from
+[CrunchyRL/RLUPKTools](https://github.com/CrunchyRL/RLUPKTools), the Rocket League modding community's package
+tools (also listed on the [Rocket League Modding Wiki](https://rocketleaguemoddingwiki.github.io/pages/software.html)). Its format: one key per line,
 base64 or hex, `#` for comments. The dumper tries each key and uses the one that decrypts the package's chunk
 table correctly; a wrong key file fails cleanly.
 
