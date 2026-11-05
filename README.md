@@ -1,3 +1,5 @@
+![catSim: a nearly perfect Rocket League simulator](docs/banner.png)
+
 # catSim
 
 A Rocket League physics simulator that aims to match the real game **bit for bit**, with a Python API shaped
