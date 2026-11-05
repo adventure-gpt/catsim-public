@@ -90,8 +90,8 @@ python -m catsim.draw --data catsim_data --map UF_Night_P --car car_id=23,wheels
 |---|---|---|
 | Steam build 25914621 (executable 1.0.10897.0), Windows 11 | Steam | Every table and mesh bit-exact against the development engine (two corrected values, docs/PROVENANCE.md) |
 | Steam build 25641912 (executable 1.0.10897.0), Windows 11 | Steam | Tables and arena meshes identical to the above |
-| Epic | Epic | **Not yet tested on a real install.** The Epic discovery is covered by unit tests with fake layouts (`tests/test_install.py`) |
+| Epic build ++Prime+Update60.1-CL-530866 (executable 1.0.10897.0), Windows 11 | Epic | Found by `--list` through the launcher's install manifest; all 18 data files (arena meshes and every table) byte-identical to the Steam dump of the same engine version |
 
-To check an Epic install: run `catsim-dump --list` (it should show an `epic` line), then
+To check another Epic install: run `catsim-dump --list` (it should show an `epic` line), then
 `catsim-dump --out epic_data --keys keys.txt --allow-unknown-version`, and compare `epic_data/catsim_data.json`'s
 file hashes with a Steam dump of the same game version.

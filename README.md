@@ -5,8 +5,8 @@ like RocketSim's, so most RocketSim scripts run with one changed import.
 
 ![How catSim gets its game data](docs/how-it-works.svg)
 
-> **Status: first release (0.1.0).** Soccar on Stadium_P and UF_Night_P at 120 ticks a second. The dumper is tested
-> on Steam installs; the Epic Games edition is supported but **not yet tested on a real Epic install**. On PyPI as
+> **Status: 0.1.1.** Soccar on Stadium_P and UF_Night_P at 120 ticks a second. The dumper is tested on Steam
+> and on the Epic Games edition (both give byte-identical game data). On PyPI as
 > [`catsim-rl`](https://pypi.org/project/catsim-rl/) (the name `catsim` there is an unrelated project).
 
 ## Five minutes to a first simulation
