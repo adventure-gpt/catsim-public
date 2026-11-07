@@ -315,6 +315,9 @@ impl<'a> Full<'a> {
             let c = self.contacts(a, nc, &demoed)?;
             a.set_contacts(&c)?;
         }
+        // the broadphase's sorted edges in the state's order: bounds at the same quantized value (cars side by side on
+        // the floor) keep the order the game's history gave them, which decides the order new pairs are made in
+        self.edges(a);
         // respawn spots for the demolished cars, from the recording (the suite hands its simulators these choices)
         if let Some(sp) = req["start"].get("respawn_spots").and_then(Value::as_array) {
             for (k, s) in sp.iter().enumerate() {
@@ -325,6 +328,52 @@ impl<'a> Full<'a> {
             }
         }
         Ok(())
+    }
+
+    /// The state's sweep-and-prune edge order (`sap_edge_pos` u16 and `sap_edge_handle` u8 per axis; the handles are
+    /// catSim's). Each edge keeps catSim's own value (the bodies' from the boxes set above; the static planes' boxes are
+    /// catSim's) and the edges take the state's order wherever the values allow it (a stable sort of the state's order by
+    /// catSim's values): bounds at the same quantized value, like cars side by side on the floor, then keep the order
+    /// the game's history gave them, which decides the order the broadphase makes new pairs in. The lists must hold the
+    /// same edges (handle and bound), else catSim's order stays.
+    fn edges(&self, a: &mut Arena) {
+        let (ep, eh) = (self.raw("solver_scratch.bp.sweep.sap_edge_pos"), self.raw("solver_scratch.bp.sweep.sap_edge_handle"));
+        let hc = self.whole_u("solver_scratch.bp.sweep.sap_handle_count") as u8 as usize;
+        let per = eh.len() / 3;
+        let bp = &mut a.world.cw.broadphase;
+        let n = 2 * hc + 2;
+        if eh.is_empty() || ep.len() != 2 * eh.len() || per < n || bp.num_handles as usize != hc || bp.edges[0].len() < n {
+            return;
+        }
+        let mut lists = Vec::with_capacity(3);
+        for ax in 0..3 {
+            let mine: std::collections::HashMap<(u16, bool), u16> =
+                bp.edges[ax][..n].iter().map(|e| ((e.handle, e.pos & 1 != 0), e.pos)).collect();
+            let mut list = Vec::with_capacity(n);
+            for i in 0..n {
+                let j = ax * per + i;
+                let max = ep[2 * j] & 1 != 0;
+                let Some(&pos) = mine.get(&(eh[j] as u16, max)) else { return };
+                list.push(catsim::bt::sweep::Edge { pos, handle: eh[j] as u16 });
+            }
+            if mine.len() != n || list[0] != bp.edges[ax][0] {
+                return;
+            }
+            list.sort_by_key(|e| e.pos);
+            if list[n - 1] != bp.edges[ax][n - 1] {
+                return;
+            }
+            lists.push(list);
+        }
+        for (ax, list) in lists.into_iter().enumerate() {
+            for (i, e) in list.into_iter().enumerate() {
+                bp.edges[ax][i] = e;
+                let h = &mut bp.handles[e.handle as usize];
+                if e.handle != 0 {
+                    if e.pos & 1 != 0 { h.max_edges[ax] = i as u16 } else { h.min_edges[ax] = i as u16 }
+                }
+            }
+        }
     }
 
     fn u32s(&self, name: &str) -> Vec<u32> {
