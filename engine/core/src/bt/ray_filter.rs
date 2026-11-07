@@ -115,7 +115,8 @@ mod tests {
             let mut t=Transform::IDENTITY;t.origin=v3(case as f32-64.0,102.4,-0.0);
             t.basis.r[0].y=-0.0;t.basis.r[2].x=-0.0;
             let mut b=Bvh{aabb_min:v3(-130.0,-140.0,-20.0),aabb_max:v3(130.0,140.0,80.0),
-                quantization:v3(250.0,230.0,650.0),cur_node_index:1,nodes:vec![QNode::default()]};
+                quantization:v3(250.0,230.0,650.0),cur_node_index:1,nodes:vec![QNode::default()],
+                fbox:Vec::new(),grid:Default::default()};
             for a in 0..3 { let x=(rand()%60000) as u16;let y=(rand()%60000) as u16;
                 b.nodes[0].min[a]=x.min(y)&0xfffe;b.nodes[0].max[a]=x.max(y)|1; }
             let filter=RootFilter::new(&b,&t).unwrap();
