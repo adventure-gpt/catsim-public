@@ -86,6 +86,9 @@ pub struct Player {
 
     pub spawn_spot: bool,
 
+    /// The pending spawn's spot is its spawn point actor's own location (the spawn selector's), not a table spot.
+    pub spawn_actor: bool,
+
     pub birth_delay: u32,
 
     pub spawn_loc: Vec3,
@@ -266,6 +269,7 @@ impl Arena {
                 spawn_dz: 0.0,
                 body: &config::BODIES[0],
                 spawn_spot: false,
+                spawn_actor: false,
                 birth_delay: 0,
                 spawn_loc: v3(0.0, 0.0, 0.0),
                 actor_loc: Vec3::ZERO,
@@ -1226,6 +1230,7 @@ impl Arena {
                 let Some(sp) = pick else { self.selector_failures += 1; continue };
                 taken.push((sp.location, sp.rotation, self.players[i].body));
                 self.spawn_car_actor(i, sp.location, sp.rotation);
+                self.players[i].spawn_actor = true;
             }
             return;
         }
@@ -1263,6 +1268,7 @@ impl Arena {
         self.seq += 1;
         self.players[i].spawn_seq = self.seq;
         self.players[i].spawn_spot = true;
+        self.players[i].spawn_actor = false;
         self.players[i].demolished = false;
         self.players[i].actor_loc = loc;
     }
@@ -1283,7 +1289,11 @@ impl Arena {
         let basis = spawn_basis(rot);
 
         let origin = if self.players[i].spawn_spot {
-            let o = config::spawn_body_origin(loc, rot.yaw, self.players[i].team, self.players[i].body);
+            let o = if self.players[i].spawn_actor {
+                config::actor_body_origin(loc, rot.yaw, self.players[i].body)
+            } else {
+                config::spawn_body_origin(loc, rot.yaw, self.players[i].team, self.players[i].body)
+            };
             v3(o.x, o.y, o.z + self.players[i].spawn_dz * 0.02)
         } else {
             v3(loc.x * 0.02, loc.y * 0.02, SPAWN_BODY_Z_BT + self.players[i].spawn_dz * 0.02)
@@ -1352,6 +1362,7 @@ impl Arena {
         self.rng ^= self.rng >> 7;
         self.rng ^= self.rng << 17;
         let mut queued = self.respawn_queue.get_mut(i).filter(|q| !q.is_empty()).map(|q| q.remove(0));
+        let mut actor = false;
         if queued.is_none() && self.selector.is_some() {
             if let Some(state) = self.crt_state {
 
@@ -1364,12 +1375,14 @@ impl Arena {
                 sel.rng = CrtRand { state };
                 let pick = sel.choose(team, true, |sp| spot_blocked(sp.location, &others), |_| None);
                 self.crt_state = Some(sel.rng.state);
+                actor = pick.is_some();
                 queued = pick.map(|sp| (sp.location, sp.rotation));
             }
             if queued.is_none() { self.selector_failures += 1; }
         }
         let spot = queued.unwrap_or_else(|| mirror_spot(RESPAWN_SPOTS[(self.rng % 4) as usize], team));
         self.spawn_car_actor(i, spot.0, spot.1);
+        self.players[i].spawn_actor = actor;
         self.players[i].respawn_left = 0.0;
         if let Some(m) = &mut self.frame_rng { m.car_respawned(i); }
     }
