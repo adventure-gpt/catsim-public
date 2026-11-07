@@ -15,6 +15,20 @@ const SLOTS: usize = 8;
 /// catSim's wheel w is the suite's (RocketSim order) wheel SUITE_WHEEL[w]: left and right swapped.
 const SUITE_WHEEL: [usize; 4] = [1, 0, 3, 2];
 
+/// The clock value one frame of `dt` earlier: the float `x` whose sum `x + dt` is exactly `v` (catSim's frame adds `dt`
+/// to it again), the nearest to `v - dt`; `v - dt` when no float adds up to `v`.
+fn before_add(v: f32, dt: f32) -> f32 {
+    let x = v - dt;
+    let step = |x: f32, k: i32| f32::from_bits((x.to_bits() as i32 + if x >= 0.0 { k } else { -k }) as u32);
+    for k in [0, -1, 1, -2, 2, -3, 3] {
+        let y = step(x, k);
+        if y + dt == v {
+            return y;
+        }
+    }
+    x
+}
+
 pub struct Full<'a> {
     index: &'a Value,
     data: &'a [u8],
@@ -83,13 +97,35 @@ impl<'a> Full<'a> {
         Mat3 { r: [v3(fwd[0], right[0], up[0]), v3(fwd[1], right[1], up[1]), v3(fwd[2], right[2], up[2])] }
     }
 
+    /// The render alpha of the frame before the start state's tick, when the state has it.
+    pub fn frame_frac_prev(&self) -> Option<f32> {
+        let v = self.whole_f("env_states.frame_frac_prev");
+        v.first().copied().filter(|x| x.is_finite() && *x >= 0.0)
+    }
+
+    /// Physics steps the frame in progress at the start state had already run.
+    pub fn frame_ticks(&self) -> i32 {
+        (self.whole_u("env_states.frame_ticks") & 0xffff) as i32
+    }
+
     /// The broadphase handles the start state's bodies hold (ball, then the cars), when the state has them.
     pub fn handles(&self, nc: usize) -> Option<Vec<u16>> {
         let r = self.raw("solver_scratch.bp.sweep.sap_body_handle");
         if r.len() < nc + 1 {
             return None;
         }
-        let h: Vec<u16> = r[..nc + 1].iter().map(|&x| x as u16).collect();
+        let mut h: Vec<u16> = r[..nc + 1].iter().map(|&x| x as u16).collect();
+        // a demolished car holds no handle: it gets one from the state's free stack (`sap_free`, the top used first),
+        // so that catSim, which makes it and demolishes it again (in car order, each freed handle on top), respawns it
+        // with the handle the game will give it
+        let free = self.raw("solver_scratch.bp.sweep.sap_free");
+        let mut top = (self.whole_u("solver_scratch.bp.sweep.sap_free_count") as u8 as usize).min(free.len());
+        for k in (1..=nc).rev() {
+            if h[k] == 0 && top > 0 {
+                top -= 1;
+                h[k] = free[top] as u16;
+            }
+        }
         let distinct = h.iter().collect::<std::collections::HashSet<_>>().len() == h.len();
         (h.iter().all(|&x| x != 0) && distinct).then_some(h)
     }
@@ -162,7 +198,10 @@ impl<'a> Full<'a> {
         a.ball_held_2d = (self.whole_u("ball_states.constrained_2d") & 0xffff) != 0;
         // what each touching wheel stands on (the arena, a car or the ball). `set_wheel_normals_mask` marks the wheels
         // whose contact is the game's world contact (bit 5: as recorded); a touching wheel it leaves out stands on a car
-        // or the ball, which catSim's own wheel ray in the start state tells apart (else the nearer of the two)
+        // or the ball, which catSim's own wheel ray in the start state tells apart (else the nearer of the two). The
+        // ray's contact step pushes a dynamic ground it is inside of (a ball under a wheel): only the rays are wanted
+        // here, so the bodies are put back as they were afterwards
+        let bodies_before = a.world.cw.bodies.clone();
         for k in grounds {
             let Some(mut h) = a.car_hidden(k) else { continue };
             let Some(c) = a.players[k].car.as_ref() else { continue };
@@ -203,6 +242,7 @@ impl<'a> Full<'a> {
                 a.set_car_hidden(k, &h);
             }
         }
+        a.world.cw.bodies = bodies_before;
         // the broadphase boxes as the game's last bounds update left them (its predictive contacts read them first)
         let boxes = self.whole_f("solver_scratch.bp.sweep.sap_body_aabb");
         let valid = self.whole_u("solver_scratch.bp.sweep.sap_body_aabb_valid") & 0xffff;
@@ -236,7 +276,8 @@ impl<'a> Full<'a> {
         // a countdown in progress: stage 1 the 1 s start timer, stage 2 the update loop ("3 - fires" left)
         let stage = self.whole_u("env_states.countdown_phase") as u8;
         if stage == 1 || stage == 2 {
-            let cnt = self.whole_f("env_states.countdown_count").first().copied().unwrap_or(0.0) - dt0;
+            // catSim's first frame adds that frame's time to the clock again: start it where that sum gives the state's
+            let cnt = before_add(self.whole_f("env_states.countdown_count").first().copied().unwrap_or(0.0), dt0);
             let fires = self.whole_u("env_states.countdown_fires") as u8 as i32;
             let mut c = CountdownClock::new(3, 3);
             if stage == 1 {
@@ -256,6 +297,18 @@ impl<'a> Full<'a> {
                     c.set_driving(false);
                 }
             }
+        }
+        // the moving bodies in the state's object order (`sap_obj`: 0 the ball, k + 1 car k): the islands are numbered
+        // in it, and the solver takes a body's contacts in the island order it gives
+        let so = self.raw("solver_scratch.bp.sweep.sap_obj");
+        let n = (self.whole_u("solver_scratch.bp.sweep.sap_obj_count") as u8 as usize).min(so.len());
+        let order: Vec<BodyRef> = so[..n].iter().filter_map(|&o| match o as usize {
+            0 => Some(BodyRef::Ball),
+            k if k <= nc && !demoed[k - 1] => Some(BodyRef::Car(k - 1)),
+            _ => None,
+        }).collect();
+        if order.len() == a.body_order().len() {
+            a.set_body_order(&order)?;
         }
         // the contact memory, in catSim's layout
         if std::env::var_os("SIMBENCH_CATSIM_NO_CONTACTS").is_none() {
@@ -286,8 +339,9 @@ impl<'a> Full<'a> {
         let now = a.contacts()?;
         let parts = a.world_parts();
         let statics = self.raw("solver_scratch.bp.sweep.sap_static_id");
+        // (handle 0 is the broadphase's unused first handle: its id reads 0 too, which is also the first mesh's)
         let static_of = |id: i16| -> Option<BodyRef> {
-            let h = statics.chunks_exact(2).position(|c| i16::from_le_bytes([c[0], c[1]]) == id)?;
+            let h = statics.chunks_exact(2).enumerate().skip(1).find(|(_, c)| i16::from_le_bytes([c[0], c[1]]) == id)?.0;
             parts.iter().position(|p| p.handle as usize == h).map(BodyRef::World)
         };
         let car = |raw: u32| -> Option<BodyRef> {
@@ -390,12 +444,26 @@ impl<'a> Full<'a> {
                 for i in 0..cnt.min(4) {
                     let q = slot * 4 + i;
                     if 3 * q + 2 < la.len() && q < d.len() {
+                        if sid >= 100 {
+                            // a plane's point on B is in world axes in the state: into the plane's own frame (catSim's
+                            // planes are turned bodies), and the plane's normal, as catSim's convex-plane contact makes them
+                            let r = &t1.basis.r;
+                            let w = at(&lb, q);
+                            let (dx, dy, dz) = (w.x - t1.origin.x, w.y - t1.origin.y, w.z - t1.origin.z);
+                            let local = v3(dy * r[1].x + dx * r[0].x + dz * r[2].x, dy * r[1].y + dx * r[0].y + dz * r[2].y, dx * r[0].z + dy * r[1].z + dz * r[2].z);
+                            let n = v3(r[0].y * 0.0 + r[0].x * 0.0 + r[0].z, r[1].y * 0.0 + r[1].x * 0.0 + r[1].z, r[2].y * 0.0 + r[2].x * 0.0 + r[2].z);
+                            push(at(&la, q), local, n, d[q]);
+                            continue;
+                        }
                         push(at(&la, q), at(&lb, q), at(&nn, q), d[q]);
                     }
                 }
             }
             // a car and the ball, or two cars: A and B as the state stores them, matched to catSim's body0 and body1 by
-            // where A's local point lands (pos_a_bt is A's point in the world)
+            // where A's local point lands (pos_a_bt is A's point in the world). The normal must point from B to A (a
+            // point on A is its point on B plus normal times distance): the state's car-ball normals do, its car-car
+            // ones point the other way (over the suite's starts, by the sign of normal . (pos_a - pos_b) * distance:
+            // 531 of 531 car-ball points, and the opposite at 126 of 126 car-car ones)
             1 | 3 => {
                 let (pre, slot) = if kind == 1 {
                     ("ball_car", ra - 1)
@@ -411,6 +479,7 @@ impl<'a> Full<'a> {
                         continue;
                     }
                     let (x, y, n, p) = (at(&la, q), at(&lb, q), at(&nn, q), at(&pa, q));
+                    let n = if kind == 3 { v3(-n.x, -n.y, -n.z) } else { n };
                     let gap = |t: &catsim::math::Transform, l: Vec3| {
                         let r = &t.basis.r;
                         let w = v3(r[0].x * l.x + r[0].y * l.y + r[0].z * l.z + t.origin.x, r[1].x * l.x + r[1].y * l.y + r[1].z * l.z + t.origin.y, r[2].x * l.x + r[2].y * l.y + r[2].z * l.z + t.origin.z);
@@ -521,7 +590,9 @@ impl<'a> Full<'a> {
         if cd > 0.0 {
             if let Some(v) = ids.iter().position(|&i| i == other) {
                 h.bump_victim = Some(v);
-                let ticks_ago = ((0.25 - cd) * 120.0).round() as i64;
+                // the state's cooldowns all sit half a tick off catSim's grid (460 of 460 over the suite): the gate
+                // opens on the tick after the one rounding to the nearest would give
+                let ticks_ago = ((0.25 - cd) * 120.0 - 0.5).round() as i64;
                 h.bump_time = (1.0 / 120.0) * (phys - ticks_ago) as f32;
             }
         }

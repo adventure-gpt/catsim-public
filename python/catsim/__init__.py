@@ -762,6 +762,17 @@ class Arena:
                                           [(x.owner, int(x.index), int(x.child[0]), int(x.child[1]), x.body0, x.body1,
                                             [p.row if isinstance(p, ContactPoint) else list(p) for p in x.points]) for x in m.manifolds])
 
+    def body_order(self) -> list:
+        """The moving bodies ("ball", "car<i>") in the collision world's object order. Each tick the islands are
+        numbered in this order and the solver takes the manifolds sorted by island, so it decides which of a body's
+        contacts is solved first. It has a history: a body that leaves (a demolished car) is replaced by the last one,
+        and a new body goes on the end."""
+        return list(self._native_arena().body_order())
+
+    def set_body_order(self, order) -> None:
+        """Put the moving bodies in this object order (`body_order()`'s layout, each of them once)."""
+        self._native_arena().set_body_order([str(x) for x in order])
+
     def world_parts(self) -> list:
         """The arena's planes and meshes ("world<k>" is the k-th): (kind, broadphase handle)."""
         return [tuple(w) for w in self._native_arena().world_parts()]

@@ -379,6 +379,17 @@ impl NativeArena {
             .collect()
     }
 
+    /// The moving bodies ("ball", "car<i>") in the collision world's object order (islands are numbered in it).
+    fn body_order(&self) -> Vec<String> {
+        self.slot.arena.body_order().into_iter().map(body_name).collect()
+    }
+
+    /// Put the moving bodies in this object order (each of them once). On an error nothing changes.
+    fn set_body_order(&mut self, order: Vec<String>) -> PyResult<()> {
+        let order = order.iter().map(|s| parse_body(s)).collect::<PyResult<Vec<_>>>()?;
+        self.slot.arena.set_body_order(&order).map_err(PyValueError::new_err)
+    }
+
     /// A body's broadphase handle (pairs are ordered by it), or None when it has no body.
     fn broadphase_handle(&self, body: &str) -> PyResult<Option<u16>> {
         Ok(self.slot.arena.broadphase_handle(parse_body(body)?))

@@ -121,6 +121,11 @@ broadphase's pair order. catSim makes both again at the first tick. A state copi
 air, or a ball in the air, runs on identically (tests/test_hidden.py checks this); one with a cached contact can drift
 by float steps. `arena.copy()` keeps everything, caches included.
 
+**Body order:** `arena.body_order()` / `arena.set_body_order(order)` read and set the order of the moving bodies
+("ball", "car<i>") in the collision world. Each tick the game numbers its islands in this order and the solver takes
+the contact manifolds sorted by island, so it decides which of a body's contacts is solved first. It has a history: a
+demolished car leaves the array (the last body takes its place) and its respawn goes on the end.
+
 ### RocketSim v3's CarState in catSim's terms
 
 For tools that hold states in RocketSim v3's names (its rlpr_metric, the full-state suite's public rows):

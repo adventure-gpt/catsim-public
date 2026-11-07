@@ -175,6 +175,30 @@ def test_contact_point_is_the_games(rs):
                         assert q.row[i] == p.row[i], (n, x.body0, x.body1)
 
 
+def test_body_order(rs):
+    """The moving bodies' object order: set and read back, kept by a copy, and its history: a demolished car leaves (the
+    last body takes its place) and its respawn goes on the end."""
+    a = arena(rs)
+    assert a.body_order() == ["ball", "car0", "car1", "car2", "car3"]
+    a.set_body_order(["ball", "car2", "car0", "car3", "car1"])
+    assert a.body_order() == ["ball", "car2", "car0", "car3", "car1"]
+    assert a.copy().body_order() == a.body_order()
+    with pytest.raises(ValueError):
+        a.set_body_order(["ball", "car0", "car1"])
+    with pytest.raises(ValueError):
+        a.set_body_order(["ball", "car0", "car0", "car2", "car3"])
+    assert a.body_order() == ["ball", "car2", "car0", "car3", "car1"]
+    b = rs.Arena(round_flow=True)
+    cars = [b.add_car(rs.Team(k % 2)) for k in range(3)]
+    for _ in range(600):
+        b.step(1)
+    cars[0].demolish_now(0.5)
+    assert b.body_order() == ["ball", "car2", "car1"]
+    for _ in range(120):
+        b.step(1)
+    assert b.body_order() == ["ball", "car2", "car1", "car0"]
+
+
 def test_demolish_and_respawn_spot(rs):
     a = rs.Arena(round_flow=True)
     car = a.add_car(rs.Team.BLUE)

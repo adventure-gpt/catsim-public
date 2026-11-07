@@ -28,6 +28,12 @@ struct CatArena {
     a: Arena,
     inputs: Vec<VehicleInputs>,
     timer_hold: bool,
+    /// The render alpha the last frame ended with (from the start state before a segment's first frame).
+    last_alpha: Option<f32>,
+    /// The last frame's time as its render alpha says, for the next frame's clocks.
+    last_frame_time: Option<f32>,
+    /// Physics steps the frame in progress at the start state had already run (a segment can start inside a frame).
+    steps_before: i32,
 }
 
 /// A car configuration (the full-state suite's `CarConfig`) -> catSim's preset (by hitbox length) and body (by spawn
@@ -54,8 +60,29 @@ fn from_config(cfg: &Value) -> Option<(&'static Preset, Option<&'static catsim::
     }
     match best {
         Some((b, _)) => Some((preset(b.preset)?, Some(b))),
-        None => Some((preset(name)?, None)),
+        None => {
+            // a body catSim's data doesn't list (the suite has two: an Octane and a Hybrid hitbox at 34.77 and
+            // 37.53 uu): the preset's first body at the config's spawn height, with no forward offset
+            let p = preset(name)?;
+            let base = catsim::game::config::BODIES.iter().find(|b| b.preset == p.name);
+            match (mz, base) {
+                (Some(mz), Some(base)) => Some((p, Some(unlisted_body(base, mz)))),
+                _ => Some((p, None)),
+            }
+        }
     }
+}
+
+/// A body made from a listed one at another spawn height, made once and kept.
+fn unlisted_body(base: &catsim::game::config::BodySpawn, mesh_z: f32) -> &'static catsim::game::config::BodySpawn {
+    static MADE: std::sync::Mutex<Vec<&'static catsim::game::config::BodySpawn>> = std::sync::Mutex::new(Vec::new());
+    let mut made = MADE.lock().unwrap();
+    if let Some(b) = made.iter().find(|b| b.product == base.product && b.mesh_z == mesh_z.to_bits()) {
+        return b;
+    }
+    let b: &'static _ = Box::leak(Box::new(catsim::game::config::BodySpawn { mesh_z: mesh_z.to_bits(), forward: 0.0, ..*base }));
+    made.push(b);
+    b
 }
 
 fn preset_of(c: &CarSpec) -> Result<(&'static Preset, Option<&'static catsim::game::config::BodySpawn>), String> {
@@ -271,7 +298,7 @@ impl Sim for Cat {
             }
         }
         Cat::kickoff(&mut a, cars.len());
-        Ok(CatArena { a, inputs: vec![VehicleInputs::default(); cars.len()], timer_hold: false })
+        Ok(CatArena { a, inputs: vec![VehicleInputs::default(); cars.len()], timer_hold: false, last_alpha: None, last_frame_time: None, steps_before: 0 })
     }
 
     fn set_state(&self, ca: &mut CatArena, st: &Value) -> Result<(), String> {
@@ -374,6 +401,10 @@ impl Sim for Cat {
             }
         }
         ca.timer_hold = b(&req["start"], "timer_hold");
+        // the render alpha the frame before the segment's first ended with
+        ca.last_alpha = f.frame_frac_prev();
+        ca.last_frame_time = None;
+        ca.steps_before = f.frame_ticks();
         ca.a.pad_rule_on = false;
         let dt0 = req.get("dt0").and_then(Value::as_f64).map(|x| x as f32).filter(|&x| x > 0.0).unwrap_or(1.0 / 120.0);
         f.apply(&mut ca.a, req, dt0)?;
@@ -405,6 +436,7 @@ impl Sim for Cat {
         Cat::controls(ca, &ticks[0]);
         let n = ticks.len() as i32;
         let alpha = alpha.clamp(0.0, 1.0);
+        let frame_time = Cat::frame_time(ca, n, frame_time, alpha);
         for j in 1..n {
             let mut c = ca.a.clone();
             c.frame_with_time(&ca.inputs, j, frame_time, alpha);
@@ -423,6 +455,27 @@ impl Sim for Cat {
 }
 
 impl Cat {
+    /// The clocks' time for a frame when the recording has none (the harness gives 1/120 s a tick then): the frame
+    /// before's, as its render alpha says. The game's physics accumulator gains a frame's time and loses 1/120 s a
+    /// physics step, and the alpha is what is left over 1/120 s, so a frame took its steps plus the alpha's change; the
+    /// round's countdown runs on that time one frame late (the state's countdown holds the frames before the segment's
+    /// first). In float32 as `(steps + alpha - alpha before) * (1/120)`. On the suite's kickoffs this puts the
+    /// countdown's end on the game's tick in every segment, against 883 of 932 at 1/120 s a tick. A segment's first
+    /// frame keeps 1/120 s a tick; a segment that starts inside a frame counts that frame's steps before it.
+    fn frame_time(ca: &mut CatArena, steps: i32, given: f32, alpha: f32) -> f32 {
+        let nominal = (f64::from(steps) / 120.0) as f32;
+        if given != nominal {
+            ca.last_alpha = Some(alpha);
+            ca.last_frame_time = None;
+            return given;
+        }
+        let t = ca.last_frame_time.filter(|&t| t > 0.0).unwrap_or(given);
+        let steps = steps + core::mem::take(&mut ca.steps_before);
+        ca.last_frame_time = ca.last_alpha.map(|prev| (steps as f32 + alpha - prev) * (1.0f32 / 120.0));
+        ca.last_alpha = Some(alpha);
+        t
+    }
+
     fn controls(ca: &mut CatArena, inp: &[[f32; TICK_CAR]]) {
         let held = !ca.timer_hold;
         let a = &mut ca.a;
