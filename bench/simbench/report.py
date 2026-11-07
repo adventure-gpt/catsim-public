@@ -946,6 +946,8 @@ def model(recs) -> dict:
                               f"{recs_most} recordings, {a['body_ticks'] / 1e6:.1f}M of {most / 1e6:.1f}M body-ticks")
                 elif a["body_ticks"] < most:
                     small += f"; scored on {a['body_ticks'] / 1e6:.1f}M of {most / 1e6:.1f}M body-ticks"
+                    if a.get("failed_segments"):
+                        small += f" ({a['failed_segments']:,} segments it couldn't run)"
                 cls = "exact" if allx else "near" if a["exact_body_ticks"] >= 99.0 else ""
                 cells[(lv, s)] = {"v": pct2(a["exact_body_ticks"], allx), "s": small, "cls": cls}
     if flow_who:
