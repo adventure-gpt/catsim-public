@@ -939,7 +939,13 @@ def model(recs) -> dict:
                 allx = a["exact_body_ticks"] >= 100.0 and a["exact_segments"] >= 100.0
                 small = "of body-ticks exact" if lv == "A" else f"{a['segment_pass']:.2f}% within tolerance"
                 most = max(p["summary"]["all"]["body_ticks"] for p in peers)
-                if a["body_ticks"] < most:
+                recs_most = max(p["summary"]["all"]["recordings"] for p in peers)
+                if a["recordings"] < recs_most:
+                    # a run on some of the suite's splits: which, and how much of the suite that is
+                    sp = sorted(k for k in r["summary"] if k != "all")
+                    small += (f"; the {' and '.join(sp)} split{'s' if len(sp) != 1 else ''} only: {a['recordings']} of "
+                              f"{recs_most} recordings, {a['body_ticks'] / 1e6:.1f}M of {most / 1e6:.1f}M body-ticks")
+                elif a["body_ticks"] < most:
                     small += f"; scored on {a['body_ticks'] / 1e6:.1f}M of {most / 1e6:.1f}M body-ticks"
                 cls = "exact" if allx else "near" if a["exact_body_ticks"] >= 99.0 else ""
                 cells[(lv, s)] = {"v": pct2(a["exact_body_ticks"], allx), "s": small, "cls": cls}
