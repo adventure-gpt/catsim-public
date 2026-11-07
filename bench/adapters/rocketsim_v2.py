@@ -60,6 +60,8 @@ class RocketSimV2(Adapter):
         rs = self.rs
         next_ctl = st.get("next_controls")
         for k, (car, c) in enumerate(zip(arena["cars"], st["cars"])):
+            if c is None:
+                continue
             c = v3_from_packet(c)
             s = car.get_state()
             s.pos, s.vel, s.ang_vel = self._vec(c["pos"]), self._vec(c["vel"]), self._vec(c["ang_vel"])

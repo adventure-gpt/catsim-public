@@ -103,6 +103,9 @@ impl Sim for V3 {
         let next = st.get("next_controls").and_then(Value::as_array);
         let cars: Vec<Value> = cars.iter().map(simbench_kit::v3_from_packet).collect();
         for (k, c) in cars.iter().enumerate() {
+            if c.is_null() {
+                continue;
+            }
             let id = va.ids[k];
             // not given: guess the car was already holding the controls of the first tick (no press or release)
             let guess: Option<Vec<f32>> = if has(c, "prev_controls") { None } else {

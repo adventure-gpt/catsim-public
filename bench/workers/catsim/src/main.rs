@@ -295,6 +295,9 @@ impl Sim for Cat {
         let next = st.get("next_controls").and_then(Value::as_array);
         let cars: Vec<Value> = cars.iter().map(simbench_kit::v3_from_packet).collect();
         for (i, c) in cars.iter().enumerate() {
+            if c.is_null() {
+                continue;
+            }
             if b(c, "is_demoed") {
                 a.set_car_demolished(i, f(c, "demo_respawn_timer", 3.0));
                 continue;

@@ -65,6 +65,8 @@ class MySim(Adapter):
 
     def set_state(self, arena, state):
         for car, c in zip(arena["cars"], state["cars"]):
+            if c is None:                   # a car given as null stays as it is
+                continue
             car.set(pos=c["pos"], forward=c["fwd"], up=c["up"], vel=c["vel"], ang_vel=c["ang_vel"], boost=c.get("boost", 33.3))
             # FILL IN: every hidden field you can take, e.g. if "is_jumping" in c: car.jumping = c["is_jumping"]
         b = state["ball"]

@@ -61,7 +61,9 @@ def prepare(rs: Path, meshes: Path) -> Path:
             s = s.replace(old, new)
         src.write_text(s, encoding="utf-8")
     print("  building rlpr_metric (release) ...", flush=True)
-    subprocess.run(["cargo", "build", "--release", "-q", "-p", "rocketsim_test", "--example", "rlpr_metric"], cwd=rs, check=True)
+    # its own target folder, whatever CARGO_TARGET_DIR says
+    subprocess.run(["cargo", "build", "--release", "-q", "-p", "rocketsim_test", "--example", "rlpr_metric",
+                    "--target-dir", str(rs / "target")], cwd=rs, check=True)
     exe = rs / "target" / "release" / "examples" / sims.exe("rlpr_metric")
     if not exe.is_file():
         raise SystemExit(f"rlpr_metric was not built at {exe}")

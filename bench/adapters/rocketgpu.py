@@ -135,6 +135,8 @@ class RocketGPU(Adapter):
         rp, rs = self.rp, self.rs
         a = arena["a"]
         for car, c in zip(arena["cars"], st["cars"]):
+            if c is None:
+                continue
             c = v3_from_packet(c)
             s = car.get_state_v3()
             v = lambda x: rp.Vec3(float(x[0]), float(x[1]), float(x[2]))

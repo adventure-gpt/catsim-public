@@ -65,6 +65,8 @@ class CatsimPy(Adapter):
         tick = int(st.get("tick", 0))
         frame = a.physics_frame
         for i, c in enumerate(st["cars"]):
+            if c is None:
+                continue
             c = v3_from_packet(c)
             if c.get("is_demoed"):
                 a.set_car_demolished(i, f32(c.get("demo_respawn_timer", 3.0)))
