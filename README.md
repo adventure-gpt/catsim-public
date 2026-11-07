@@ -77,6 +77,15 @@ own), the fast engine equals the reference engine bit for bit, Windows and Linux
 our own recorded 2v2 games (five minutes, not published) replays through this engine with every compared tick
 exact.
 
+## Beside the other simulators
+
+[docs/BENCHMARKS.md](docs/BENCHMARKS.md) runs catSim, RocketSim v3 and v2, RocketGPU and RLMAX through one harness on
+the same work, with every number saying what each simulator was given and what was scored. In short: catSim plays our
+recorded games through to the end exactly and follows the game's own physics on the full-state suite, and it runs at
+about half RocketSim v3's speed on the same CPU work. Each benchmark is one command (`cd bench && python -m simbench
+all --sims catsim,rocketsim-v3`), it writes its own readable report, and any simulator can join with a one-file
+adapter.
+
 ## Building from source
 
 You need Rust 1.95 and Python 3.10+.

@@ -59,7 +59,7 @@ been checked against the real game for a long time and reads its game data its o
 ## The game data on two sets of recordings (2026-11-06)
 
 Measured on data from Steam build 26349479. Both sets of recordings were made before that build, on earlier ones.
-The harness that ran these and our recordings will be published with the benchmarks.
+The harness that ran these is `bench/simbench` (docs/BENCHMARKS.md has the commands); our recordings are in `bench/recordings` and the release archive.
 
 - **The public RocketGPU full-state suite**, its 36 recordings with a Plank-hitbox car, at the suite's level A
   (each segment started from the game's full internal state): 99.29% of 4,507,550 body-ticks and 96.08% of 7,090
@@ -83,5 +83,6 @@ The harness that ran these and our recordings will be published with the benchma
 
 ## Speed
 
-catSim does more work per tick than RocketSim (it follows the game's own order of operations), so it is slower.
-No speed claim is made in this repo yet.
+catSim does more work per tick than RocketSim (it follows the game's own order of operations), so it is slower:
+about half RocketSim v3's speed on the same CPU work. docs/BENCHMARKS.md has the measured tables, CPU and GPU
+simulators apart, and the command that makes them on your machine.
