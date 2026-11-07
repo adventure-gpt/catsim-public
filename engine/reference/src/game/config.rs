@@ -84,14 +84,24 @@ pub fn body_spawn(key: &str) -> Option<&'static BodySpawn> {
 }
 
 pub fn spawn_body_origin(spot: Vec3, yaw: i32, team: u8, b: &BodySpawn) -> Vec3 {
-    let t = crate::math::rot::sine_table();
     let (mut x, mut y) = (spot.x, spot.y);
     if team == 1 {
+        let t = crate::math::rot::sine_table();
         let (bx, by) = (-x, -y);
         let (c, s) = (crate::math::rot::tcos(t, 32768), crate::math::rot::tsin(t, 32768));
         x = c * bx - s * by;
         y = s * bx + c * by;
-    } else if b.forward == 0.0 && y == -2560.0 && (x == 2048.0 || x == -2048.0) {
+    }
+    actor_body_origin(v3(x, y, spot.z), yaw, b)
+}
+
+/// A car body's first origin from its spawn point actor's own location (`spawn_body_origin` once the orange spot has
+/// been turned): the spawn selector's spots are those floats already, an orange one turned half a turn through the
+/// sine table, so it is not turned again (turned twice its x / y were 2-14 float steps off at every orange spawn).
+pub fn actor_body_origin(loc: Vec3, yaw: i32, b: &BodySpawn) -> Vec3 {
+    let t = crate::math::rot::sine_table();
+    let (x, mut y) = (loc.x, loc.y);
+    if b.forward == 0.0 && y == -2560.0 && (x == 2048.0 || x == -2048.0) {
         y = f32::from_bits(0xc51f_ffff);
     }
     let (cy, sy) = (crate::math::rot::tcos(t, yaw), crate::math::rot::tsin(t, yaw));
