@@ -35,9 +35,11 @@ PRESET_OF_BODY = {23: "Octane", 4906: "Octane", 5039: "Octane", 403: "Dominus", 
                   8669: "Breakout", 10697: "Breakout", 7901: "Breakout", 10698: "Breakout", 31: "Hybrid", 9427: "Hybrid",
                   7012: "Hybrid", 803: "Plank", 24: "Plank", 7052: "Plank", 30: "Merc", 4780: "Merc", 4782: "Psyclops"}
 
-ASSISTS = ["each kickoff's start (cars and ball where the recording's countdown starts them) and the hold through the "
-           "countdown: the harness, not the simulator, runs the match flow",
-           "the restart after each goal, when the recording has it", "each demolished car put back where the recording respawns it",
+ASSISTS = ["the harness supplies only the match flow the simulator lacks: each kickoff's start (cars and ball where the "
+           "recording's countdown starts them) and the hold through the countdown, the restart after each goal when the "
+           "recording has it, and each demolished car's respawn spot from the recording",
+           "the simulator runs everything it models itself: physics, boost and pads, demolitions and their respawn timers, "
+           "goals (its own goal, if it has one, changes nothing the harness does)",
            "each frame's physics ticks counted from the recording", "scored on bodies only (no boost or pads)"]
 
 
