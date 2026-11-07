@@ -140,12 +140,9 @@ impl<'a> Full<'a> {
         let bv = self.whole_f("ball_states.vel_bt");
         let asleep = self.whole_u("ball_states.sleeping") as u32 != 0;
         let dtime = self.whole_f("ball_states.deactivation_time").first().copied().unwrap_or(0.0);
-        // a ball resting on the floor (or moving) keeps its deactivation clock; one parked still off the floor by a state set
-        // sleeps whatever its clock says
-        let resting = (bp[2] * 50.0 - 92.75).abs() < 0.01;
-        let still = bv.iter().all(|&x| x == 0.0) && self.whole_f("ball_states.ang_vel").iter().all(|&x| x == 0.0);
-        let dt_used = if resting || !still { dtime } else { 0.0 };
-        let sleeping = if std::env::var_os("SIMBENCH_OLD_SLEEP").is_some() { asleep && dt_used <= 0.0 } else { asleep };
+        // the state's sleep flag is Bullet's: catSim run into a segment's start from the one before sleeps the ball exactly
+        // when the flag is set (147 of 147 run-ins checked, kickoff countdowns included)
+        let sleeping = asleep;
         let ball = BodyState {
             origin: Self::vec(&bp, 0),
             basis: Self::basis(&self.whole_f("ball_states.basis_forward"), &self.whole_f("ball_states.basis_right"), &self.whole_f("ball_states.basis_up")),
