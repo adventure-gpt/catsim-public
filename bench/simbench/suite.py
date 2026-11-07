@@ -315,15 +315,27 @@ def run(names, setup_env, data: Path, levels, splits, limit, jobs, log_dir, emit
             res = []
             lock = threading.Lock()
             pool = []
+            # each recording's result as it finishes, so a long run that stops goes on from there in the same --out folder
+            progress = Path(log_dir) / f"suite_{sims.label(name)}_{lv}.progress.jsonl"
+            done = {}
+            if progress.is_file():
+                for line in progress.read_text(encoding="utf-8").splitlines():
+                    x = json.loads(line)
+                    done[x["name"]] = x
 
             def work(rec_name):
+                if rec_name in done:
+                    return done[rec_name]
                 with lock:
                     w = pool.pop() if pool else None
                 if w is None:
                     w = sims.start(name, setup_env, Path(log_dir))
                 holder = [w]
                 try:
-                    return score_recording(holder, folder / (rec_name + ".npz"), lv, hello.get("units", "uu"))
+                    x = score_recording(holder, folder / (rec_name + ".npz"), lv, hello.get("units", "uu"))
+                    with lock, open(progress, "a", encoding="utf-8") as f:
+                        f.write(json.dumps({**x, "finished_at": round(time.time())}, default=float) + "\n")
+                    return x
                 finally:
                     with lock:
                         pool.append(holder[0])
@@ -333,6 +345,8 @@ def run(names, setup_env, data: Path, levels, splits, limit, jobs, log_dir, emit
                     res.append(r)
             for w in pool:
                 w.close()
+            if progress.is_file():
+                progress.replace(progress.with_suffix(".finished"))
             per = {x["name"]: [round(100.0 * x["exact_bt"] / max(x["body_ticks"], 1), 4), round(100.0 * x["passed"] / max(x["total"], 1), 4),
                                x["failed_segs"]] for x in res}
             by_split = {}

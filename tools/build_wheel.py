@@ -17,7 +17,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-NAME, VERSION = "catsim", "0.1.2"        # NAME: the import package
+NAME, VERSION = "catsim", "0.1.3"        # NAME: the import package
 DIST = "catsim-rl"                          # the name on PyPI ("catsim" there is an unrelated project)
 DIST_FILE = DIST.replace("-", "_")
 SKIP = {"__pycache__"}

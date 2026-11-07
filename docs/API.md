@@ -73,6 +73,10 @@ handling preset names (`"Octane_Skunkz"`, `"LongCar_hero"`...) or a car body's n
 
 ## Hidden state: restoring a recorded or saved state exactly
 
+New in 0.1.3: the hidden state below (`CarHidden`, `get_hidden` / `set_hidden`, `get_body` / `set_body`, `arena.copy`,
+`get_round` / `set_round`, the pads' timers), the contact memory (`arena.get_contacts` / `set_contacts`) and the body
+order (`arena.body_order` / `set_body_order`).
+
 A packet shows where a car is and how it moves. The next ticks also read what it doesn't show: the jump and dodge
 clocks, the input the car still holds, its wheels' contacts, the gates that stop a second ball hit or bump too soon.
 catSim lets you read and set all of it, so a state you save (or one recorded from the game) can be put back exactly.
@@ -116,10 +120,18 @@ More for setting up a start: `car.demolish_now(respawn_in)`, `car.queue_respawn(
 `arena.set_pad_rule(on)` (off: pads change only when you say), `arena.use_game_countdown()` (later kickoffs run the
 game's own 3-second countdown clock). The Rust API has the same in `catsim::game::hidden`.
 
-**What can't be set:** the contact manifolds' cached points (where a body touched something last tick) and the
-broadphase's pair order. catSim makes both again at the first tick. A state copied from a car on its wheels or in the
-air, or a ball in the air, runs on identically (tests/test_hidden.py checks this); one with a cached contact can drift
-by float steps. `arena.copy()` keeps everything, caches included.
+A state copied from a car on its wheels or in the air, or a ball in the air, runs on identically (tests/test_hidden.py
+checks this). One with a cached contact needs the contact memory too. `arena.copy()` keeps everything.
+
+**Contact memory:** what a step reads from the last one besides the bodies. `arena.get_contacts()` gives a
+`ContactMemory`: `boxes` (each moving body's broadphase box as the last bounds update left it: (body, min, max)), `pairs`
+(the broadphase's overlapping pairs in their order: (body0, body1, dispatched)) and `manifolds` (each `Manifold`: its
+`owner`, "pair" or "predictive", and `index`, `child`, `body0`, `body1`, and up to 4 cached `ContactPoint`s).
+`arena.set_contacts(m)` puts one back; on an error nothing changes. Bodies are named "ball", "car<i>" (the car's place in
+`get_cars()`) or "world<k>" (`arena.world_parts()`'s k-th plane or mesh). `ContactPoint.fields()` names a point's numbers,
+and `arena.contact_point(body0, body1, local_a, local_b, normal, distance)` makes a point the game's way from the point on
+each body, the normal and the distance. The native arena has the same as `contacts()` / `set_contacts()`, and the Rust API
+as `Arena::contacts` / `set_contacts`.
 
 **Body order:** `arena.body_order()` / `arena.set_body_order(order)` read and set the order of the moving bodies
 ("ball", "car<i>") in the collision world. Each tick the game numbers its islands in this order and the solver takes

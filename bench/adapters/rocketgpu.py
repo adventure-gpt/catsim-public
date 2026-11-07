@@ -4,6 +4,11 @@ Point the adapter at your build's python folder: SIMBENCH_ROCKETGPU_CUDA=.../bui
 SIMBENCH_ROCKETGPU_CPU=.../build-cpu/python (`rocketgpu-cpu`; its README's fastest CPU build is the profile-guided one,
 tools/pgo_build.sh). ROCKETGPU_COLLISION_MESH_DIR is set from the harness's collision_meshes folder.
 
+A CUDA build for an RTX 40 or older (we built for sm_89, CUDA 13.2) needs one local patch, since nvcc rejects the
+`__builtin_assume_aligned` arguments for those cards: in `CopyCarWorldRow` (include/rocketgpu/detail/step/env_step.hpp),
+`memcpy(&dst, &src, sizeof(T));` in place of `memcpy(__builtin_assume_aligned(&dst, 16), __builtin_assume_aligned(&src, 16),
+sizeof(T));`. The same bytes are copied. Our CUDA rows on the RTX 4070 ran with it; a build for an RTX 50 doesn't need it.
+
 Speed: its batched path, `BatchSim` (all arenas in one simulator): every decision the 8 ticks' controls go in one call,
 `step_with_device_controls` (a device buffer on the CUDA build, a host array on the CPU build); the states stay where
 the simulator keeps them (on the card for CUDA; read through its host view on the CPU build).

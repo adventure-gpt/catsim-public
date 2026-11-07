@@ -964,6 +964,12 @@ def model(recs) -> dict:
                      "read as the game reads a body for its packets (speeds capped, the rotation through its packed "
                      "quaternion).")
     # which machine ran what, when more than one did
+    if any(s == "rocketgpu" and r.get("status") == "ok" and "4070" in " ".join((r.get("machine") or {}).get("gpus") or [])
+           for (s, _), r in acc.items()):
+        notes.append("RocketGPU (CUDA)'s rows on the RTX 4070 ran with one local build patch that card needs: in CopyCarWorldRow "
+                     "(include/rocketgpu/detail/step/env_step.hpp), memcpy(&dst, &src, sizeof(T)) in place of the call with "
+                     "__builtin_assume_aligned, which nvcc rejects for sm_89. The same bytes are copied; bench/adapters/rocketgpu.py "
+                     "has it.")
     speed_cpu = next((r["machine"]["cpu"] for r in recs if r.get("kind") == "speed" and r.get("machine")), None)
     places = {}
     for (sim, lv), r in acc.items():
@@ -1043,7 +1049,8 @@ def subtitle(recs) -> str:
     speed = [r["machine"] for r in recs if r.get("kind") == "speed" and r.get("machine")]
     if speed and len({short_machine(x) for x in ms}) > 1:
         when = max((r.get("when", "")[:10] for r in recs), default="")
-        return (f"The same tests for every simulator, on one machine ({short_machine(speed[0])}"
+        with_card = next((x for x in speed if x.get("gpus")), speed[0])
+        return (f"The same tests for every simulator, on one machine ({short_machine(with_card)}"
                 + (f", {when}" if when else "") + ") but for the accuracy rows the notes name.")
     m = Counter(json.dumps(x, sort_keys=True) for x in ms).most_common(1)[0][0]
     m = json.loads(m)
