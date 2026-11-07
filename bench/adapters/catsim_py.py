@@ -233,6 +233,16 @@ class CatsimPy(Adapter):
         a = saved = None
         spot = lambda s: ([float(s[0]), float(s[1]), float(s[2])], [0, int(s[3]), 0])
         steps, ftime, alpha, judge, ctl = fr["steps"], fr["time"], fr["alpha"], fr["judge"], fr["controls"]
+        frow = fr.get("float")
+        fout = np.zeros((int(req.get("float_rows") or 0), nc + 1, 19), np.float32)
+
+        def float_row(r):
+            # each body exactly as the physics holds it: present, origin, basis by rows, linear and angular velocity
+            for b in range(nc + 1):
+                x = a.car_body(b) if b < nc else a.ball_body()
+                if x is not None:
+                    fout[r, b, 0] = 1.0
+                    fout[r, b, 1:] = np.asarray(x[:18], np.float32)
         for op in req["ops"]:
             name = op[0]
             if name == "arena":
@@ -297,9 +307,11 @@ class CatsimPy(Adapter):
                         a.step_frame(rows, n, float(ftime[k]), al)
                     if judge[k] >= 0:
                         out[judge[k]] = a.packet_view()
+                    if frow is not None and frow[k] >= 0:
+                        float_row(int(frow[k]))
             else:
                 raise RuntimeError(f"unknown game op {name}")
-        return out
+        return np.concatenate([out.reshape(-1), fout.reshape(-1)]) if len(fout) else out
 
     def bodies(self, arena):
         a, n = arena["a"], arena["n"]

@@ -89,9 +89,27 @@ def _view_of(bodies, units, nc):
     return out
 
 
-def run(worker, rec: dict, units: str) -> np.ndarray:
+def _float_of(bodies, units, nc):
+    """Adapter bodies -> [present, origin, basis by rows, linear velocity, angular velocity] in Bullet units (a "uu"
+    simulator's values are divided by 50 in float32: they can't be the game's words, and are scored as they come)."""
+    out = np.zeros((nc + 1, 19), F32)
+    k = F32(50.0)
+    for b in range(nc + 1):
+        x = bodies[b]
+        if not np.any(x != 0.0):
+            continue
+        out[b, 0] = 1.0
+        out[b, 1:4] = x[0:3] / k if units == "uu" else x[0:3]
+        out[b, 4:13] = np.stack([x[9:12], x[12:15], x[15:18]], -1).reshape(9)
+        out[b, 13:16] = x[3:6] / k if units == "uu" else x[3:6]
+        out[b, 16:19] = x[6:9]
+    return out
+
+
+def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.ndarray:
     """Run one recording through the harness's flow. Returns the view: per compared row, cars then the ball (NaN where
-    the simulator reports nothing: boost, pads)."""
+    the simulator reports nothing: boost, pads). `fview` (float rows x bodies x 19), when given, gets the bodies after
+    each frame that has a float row."""
     meta = rec["meta"]
     nc = int(meta["cars"])
     ops = rec.get("ops_C") or rec.get("ops")
@@ -123,6 +141,9 @@ def run(worker, rec: dict, units: str) -> np.ndarray:
         nxt[f] = after
     started = False
     last = None
+    frow = np.full(len(judge), -1, np.int64)
+    if fview is not None:
+        frow[rec["float_frame"].astype(np.int64)] = np.arange(len(rec["float_frame"]))
     latch = np.zeros(nc, bool)             # jump held since a countdown: not a press until let go
     for f in range(len(judge)):
         r = int(judge[f])
@@ -166,6 +187,8 @@ def run(worker, rec: dict, units: str) -> np.ndarray:
                 last = np.frombuffer(data, F32).reshape(nc + 1, 18)
             if last is not None:
                 view[r] = _view_of(last, units, nc)
+        if fview is not None and frow[f] >= 0 and last is not None:
+            fview[frow[f]] = _float_of(last, units, nc)
     # a compared row the recording judges after its frames (the match's end)
     for op in ops:
         if op[0] == "judge" and last is not None and np.isnan(view[int(op[1]), 0]):

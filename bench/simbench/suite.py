@@ -32,7 +32,7 @@ import numpy as np
 from .state import PRESETS as STATE_PRESETS
 from . import sims
 from .client import WorkerError
-from .state import packet_of
+from .state import SHORT, packet_of
 
 F32 = np.float32
 KS = (1, 30, 120)
@@ -302,7 +302,7 @@ def run(names, setup_env, data: Path, levels, splits, limit, jobs, log_dir, emit
             if LEVEL_NAME[lv] not in hello.get("caps", {}).get("levels", []):
                 emit({"kind": "accuracy", "level": lv, "suite": "full-state suite", "sim": sims.label(name), "status": "not supported",
                       "why": f"its adapter can't take the {LEVEL_NAME[lv]} start state", "version": hello.get("version")})
-                print(f"  {sims.label(name):14s} level {lv}: not supported", flush=True)
+                print(f"  {sims.label(name):14s} {SHORT[lv]}: not supported", flush=True)
                 continue
             t0 = time.time()
             res = []
@@ -338,7 +338,7 @@ def run(names, setup_env, data: Path, levels, splits, limit, jobs, log_dir, emit
                   "summary": summary, "seconds": round(time.time() - t0), "recordings": [x["name"] for x in res],
                   "per_recording": per,
                   "first_error": next((x["first_error"] for x in res if x["first_error"]), None)})
-            print(f"  {sims.label(name):14s} level {lv}: exact body-ticks {s['exact_body_ticks']:.4f}%  exact segments "
+            print(f"  {sims.label(name):14s} {SHORT[lv]}: exact body-ticks {s['exact_body_ticks']:.4f}%  exact segments "
                   f"{s['exact_segments']:.3f}%  pass {s['segment_pass']:.3f}%  k1/k30/k120 "
                   f"{s['mean_error']['1'] or 0:.4f}/{s['mean_error']['30'] or 0:.4f}/{s['mean_error']['120'] or 0:.4f}  "
                   f"({s['recordings']} recordings, {s['body_ticks']:,} body-ticks, {s['failed_segments']} failed segments, "

@@ -31,6 +31,7 @@ from pathlib import Path
 import numpy as np
 
 from . import flow, game, sims
+from .state import SHORT
 
 HERE = Path(__file__).resolve().parents[1] / "recordings"
 
@@ -45,8 +46,8 @@ def recording_files(extra: str | None = None) -> list[Path]:
 
 
 def run(names, setup_env, levels, limit, jobs, out_dir, emit):
-    levels = [x.strip() for x in (levels or "C,D").split(",") if x.strip() in ("C", "D")]
-    files = recording_files()
+    levels = [x.strip() for x in (levels or "C,D,Cf,Df").split(",") if x.strip() in ("C", "D", "Cf", "Df")]
+    files = recording_files() + recording_files(os.environ.get("SIMBENCH_FLOAT_RECORDINGS"))
     by_level = {lv: [f for f in files if lv in game.levels(game.load_meta(f))] for lv in levels}
     for lv in levels:
         if limit:
@@ -64,13 +65,14 @@ def run(names, setup_env, levels, limit, jobs, out_dir, emit):
         units = hello.get("units", "uu")
         own_flow = bool(caps.get("game_flow") and caps.get("spot_choices"))
         for lv in levels:
-            if lv == "D" and not (caps.get("game_flow") and caps.get("rng_stream")):
+            if lv in ("D", "Df") and not (caps.get("game_flow") and caps.get("rng_stream")):
                 emit({"kind": "accuracy", "level": lv, "suite": "our recordings", "sim": label, "status": "not supported",
                       "version": hello.get("version"), "needs": "rng_stream",
-                      "why": "level D tests predicting the game's own random draws from its random stream, which this "
-                             "simulator doesn't model; handing it the draws is level C"})
+                      "why": "these games test predicting the game's own random draws from its random stream, which this "
+                             "simulator doesn't model; handing it the draws instead is the whole-games run with the spots given"})
                 continue
-            harness_flow = lv == "C" and not own_flow
+            harness_flow = lv in ("C", "Cf") and not own_flow
+            floats = lv in ("Cf", "Df")
             if not by_level[lv]:
                 emit({"kind": "accuracy", "level": lv, "suite": "our recordings", "sim": label, "status": "not run",
                       "why": "no recordings of this level found (bench/recordings, SIMBENCH_RECORDINGS)"})
@@ -87,14 +89,22 @@ def run(names, setup_env, levels, limit, jobs, out_dir, emit):
                 try:
                     rec = game.load(path)
                     try:
+                        J = len(rec["truth_phase"])
+                        fview = np.zeros((len(rec["float_frame"]), int(rec["meta"]["cars"]) + 1, 19), np.float32) if floats else None
                         if harness_flow:
-                            view = flow.run(w, rec, units)
+                            view = flow.run(w, rec, units, fview)
                             r = flow.score(rec, view)
                         else:
-                            req, payload = game.pack(rec, lv)
+                            req, payload = game.pack(rec, lv, float_rows=floats)
                             _, data = w.request(req, payload)
-                            view = np.frombuffer(data, np.float32).astype(np.float64).reshape(len(rec["truth_phase"]), -1)
+                            flat = np.frombuffer(data, np.float32)
+                            nview = J * game.width(int(rec["meta"]["cars"]))
+                            view = flat[:nview].astype(np.float64).reshape(J, -1)
                             r = game.score(rec, view.astype(np.float32))
+                            if floats:
+                                fview = flat[nview:].reshape(fview.shape)
+                        if floats:
+                            r = dict(game.score_float(rec, fview), packet=r, bodies_only=harness_flow)
                     except Exception as e:  # noqa: BLE001
                         if w.p.poll() is not None:
                             w = sims.start(name, setup_env, Path(out_dir))
@@ -129,14 +139,15 @@ def run(names, setup_env, levels, limit, jobs, out_dir, emit):
                 err[str(h)] = s_ / c_ if c_ else None
             summary["error_after_kickoff"] = err
             summary["bodies_only"] = harness_flow
-            assists = (ASSISTS[lv] if not harness_flow else ASSISTS[lv][:1] + flow.ASSISTS)
+            base = ASSISTS[lv.rstrip("f")]
+            assists = (base if not harness_flow else base[:1] + flow.ASSISTS)
             emit({"kind": "accuracy", "level": lv, "suite": "our recordings", "sim": label, "status": "ok",
                   "version": hello.get("version"), "about": hello.get("about"), "choices": hello.get("choices", []),
                   "flow": "the harness's (simbench.flow)" if harness_flow else "the simulator's own",
                   "assists": assists, "summary": summary, "recordings": res, "seconds": round(time.time() - t0)})
             e = summary["error_after_kickoff"]
             fmt = lambda x: "-" if x is None else f"{x:.3f}"
-            print(f"  {label:14s} level {lv}{' (harness flow, bodies only)' if harness_flow else ''}: "
+            print(f"  {label:14s} {SHORT[lv]}{' (harness flow, bodies only)' if harness_flow else ''}: "
                   f"{summary['exact_to_the_end']}/{len(res)} recordings exact to the end, "
                   f"{summary['exact_rows']:,}/{summary['compared_rows']:,} compared rows exact ({summary['exact_pct']:.3f}%), "
                   f"first drift median {summary.get('first_drift_s', {}).get('median', 0):.1f} s, "
@@ -148,8 +159,8 @@ def run(names, setup_env, levels, limit, jobs, out_dir, emit):
                     f = r["first_drift"]
                     print(f"      {r['name']:28s} {r['mode']} {r['map']:10s} {r['seconds']:6.1f} s: "
                           + ("exact to the end" if f is None else
-                             f"exact for {f['compared_row']:,} of {f['of']:,} compared rows, first drift at tick {f['tick']:,} "
-                             f"({f['seconds']} s, {f['phase']}: {', '.join(f['bodies']) or ('pads' if f['pads'] else 'boost')})")
+                             f"exact for {f.get('compared_row', f.get('row', 0)):,} of {f['of']:,} compared rows, first drift at tick {f['tick'] or 0:,} "
+                             f"({f['seconds']} s, {f['phase']}: {', '.join(f['bodies']) or ('pads' if f.get('pads') else 'boost')})")
                           + (f"; ball rotation {r['ball_rotation_exact']}/{r['ball_rotation_compared']}" if 'ball_rotation_exact' in r else ''), flush=True)
 
 

@@ -1,9 +1,9 @@
 """simbench: one harness, any simulator. docs/BENCHMARKS.md explains every benchmark and how to read the results.
 
     python -m simbench speed       --sims catsim,rocketsim-v3          [--plan quick|full] [--rounds 5]
-    python -m simbench suite       --sims catsim,rocketsim-v3 --suite-data DIR   [--levels A,B1,B2] [--splits dev,test]
+    python -m simbench suite       --sims catsim,rocketsim-v3 --suite-data DIR   [--levels full,public,packet] [--splits dev,test]
     python -m simbench rlpr        --sims catsim                       (RocketSim's own rlpr_metric, our bridge)
-    python -m simbench recordings  --sims catsim                       [--levels C,D]
+    python -m simbench recordings  --sims catsim                       [--levels spots,stream]
     python -m simbench all         --sims ...                          (every benchmark the simulators support)
     python -m simbench report      [--doc ../docs/BENCHMARKS.md]       (rebuild the report from bench_results/)
     python -m simbench check       --sims mine=path/to/adapter.py      (a quick test of a new adapter)
@@ -76,12 +76,16 @@ def main(argv=None) -> None:
     ap.add_argument("--device", choices=["cpu", "gpu"], help="(speed) only simulators on this device")
     ap.add_argument("--only", help="(speed) only these rows, as mode:arenas:threads[,...] (e.g. 3v3:1024:16)")
     ap.add_argument("--suite-data", help="(suite) the full-state suite's data folder (its README says how to get it)")
-    ap.add_argument("--levels", help="accuracy levels to run (default: all the benchmark has)")
+    ap.add_argument("--levels", help="which of the benchmark's starts to run: full, public, packet (suite); spots, stream "
+                    "(recordings); or the ids A, B, Bp, C, D (default: all the benchmark has)")
     ap.add_argument("--splits", default="all", help="(suite) which of its splits, or recording names")
     ap.add_argument("--limit", type=int, default=0, help="(suite, recordings) at most this many recordings (a quick look)")
     ap.add_argument("--jobs", type=int, default=0, help="(suite, recordings) worker processes per simulator (default: threads / 2)")
     ap.add_argument("--doc", help="(report) also fill this docs/BENCHMARKS.md's generated sections")
     a = ap.parse_args(argv)
+    if a.levels:
+        from .state import WORDS
+        a.levels = ",".join(WORDS.get(x.strip(), x.strip()) for x in a.levels.split(","))
     names = [s.strip() for s in a.sims.split(",") if s.strip()]
     out = Path(a.out)
     if a.bench == "build":

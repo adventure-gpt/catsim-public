@@ -46,6 +46,11 @@ V3_CAR = ("pos", "fwd", "right", "up", "vel", "ang_vel", "boost", "on_ground", "
 BALL = ("pos", "fwd", "right", "up", "vel", "ang_vel", "asleep")
 
 LEVELS = {"A": "full", "B": "v3", "Bp": "packet"}
+# What a reader sees for each benchmark id (the ids stay short in results.jsonl and --levels; --levels also takes
+# these words: full, public, packet, spots, stream)
+SHORT = {"A": "full state", "B": "public state", "Bp": "packet fields", "C": "whole games, spots given",
+         "D": "whole games, random stream", "Cf": "whole games (float), spots given", "Df": "whole games (float), random stream"}
+WORDS = {"full": "A", "public": "B", "packet": "Bp", "spots": "C", "stream": "D"}
 
 
 def packet_of(c: dict) -> dict:
