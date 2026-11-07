@@ -21,7 +21,7 @@ import time
 
 import numpy as np
 
-from . import sims
+from . import machine, sims
 from .client import WorkerError
 
 KICKOFF = [(-2048.0, -2560.0, 0.25 * math.pi), (2048.0, -2560.0, 0.75 * math.pi), (-256.0, -3840.0, 0.5 * math.pi),
@@ -178,6 +178,7 @@ def _run_group(names, hello, setup_env, plan, rounds, max_threads, seed, log_dir
                "warmup": 1, "repeats": 1, "seed": seed, "map": "Stadium_P"}
         samples = {n: [] for n in names}
         skip = {}
+        loads = {}
         for r in range(rounds):
             for n in (names if r % 2 == 0 else names[::-1]):
                 if n in skip:
@@ -185,12 +186,15 @@ def _run_group(names, hello, setup_env, plan, rounds, max_threads, seed, log_dir
                 if threads > 1 and not hello[n].get("caps", {}).get("threads"):
                     skip[n] = "steps one arena at a time on one thread (no threaded path)"
                     continue
+                w = worker(n, threads)
                 try:
-                    rep, _ = worker(n, threads).request({"op": "speed", "job": job, "starts": st}, payload)
+                    with machine.Busy(gpu=device == "gpu") as busy:
+                        rep, _ = w.request({"op": "speed", "job": job, "starts": st}, payload)
                 except WorkerError as e:
                     skip[n] = str(e).splitlines()[0]
                     continue
                 samples[n].append((rep["seconds"][0], rep.get("threads", threads)))
+                loads.setdefault(n, []).append(busy.result)
         for n in names:
             h, name = hello[n], sims.label(n)
             if n in skip or not samples[n]:
@@ -205,6 +209,6 @@ def _run_group(names, hello, setup_env, plan, rounds, max_threads, seed, log_dir
                   "choices": h.get("choices", []), "mode": mode, "arenas": arenas, "threads": threads, "threads_used": used,
                   "decisions": decisions, "rounds": len(tps), "arena_ticks_per_s": statistics.median(tps),
                   "min": min(tps), "max": max(tps), "cpu_us_per_arena_tick": used * 1e6 / statistics.median(tps),
-                  "status": "ok"})
+                  "load": loads.get(n, []), "status": "ok"})
     for w in workers.values():
         w.close()

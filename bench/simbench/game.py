@@ -65,7 +65,12 @@ def load_meta(path) -> dict:
 
 
 def levels(meta: dict) -> list:
-    return meta.get("levels") or [meta["level"]]
+    """The runs a recording takes part in. A float-precision game with no packet twin among the packet recordings
+    also counts as a packet-level game (its packet rows are in it)."""
+    lv = list(meta.get("levels") or [meta["level"]])
+    if "Cf" in lv and meta.get("packet_twin", "") is None:
+        lv += [x for x in ("C", "D") if x not in lv and (x == "C" or "Df" in lv)]
+    return lv
 
 
 def load(path) -> dict:

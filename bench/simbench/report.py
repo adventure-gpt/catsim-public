@@ -122,15 +122,23 @@ def acc_rows(recs):
     return latest(acc + rl, lambda r: (r["sim"], r["level"]))
 
 
+def clean(why: str) -> str:
+    """A stored reason in today's words (older results named the benchmarks by letter)."""
+    for a, b in (("level C:", ""), ("level D:", ""), ("level A:", ""), ("level B:", ""), ("level D tests", "these games test"),
+                 ("handing it the draws is level C", "handing it the draws instead is the whole-games run with the spots given")):
+        why = why.replace(a, b)
+    return why.strip()
+
+
 def cell(level: str, r: dict | None, peers: list, notes: Notes, main_when: str | None) -> str:
     """One summary cell: exact / pass (or the level's equivalent), with footnotes."""
     if r is None:
         return "not run"
     who = nice(r["sim"])
     if r.get("status") == "not supported":
-        return "not supported" + notes.mark(f"{who}, {LEVELS[level][1]}: {r.get('why', 'its adapter cannot take this level')}.")
+        return "not supported" + notes.mark(f"{who}, {LEVELS[level][1]}: {clean(r.get('why', 'its adapter cannot take this start'))}.")
     if r.get("status") != "ok":
-        return r.get("status", "not run") + notes.mark(f"{who}, {LEVELS[level][1]}: {r.get('why', '')}.")
+        return r.get("status", "not run") + notes.mark(f"{who}, {LEVELS[level][1]}: {clean(r.get('why', ''))}.")
     marks = ""
     if r.get("binding"):
         marks += notes.mark(f"{who}, {LEVELS[level][1]}: through {nice(r['binding'])} ({r.get('version', '')}), the "
@@ -406,7 +414,29 @@ def charts(recs, out: Path) -> list[Path]:
     return made
 
 
-def speed_tables(recs) -> list[str]:
+BUSY_CORES = 0.25           # other processes' CPU, in cores, above which a timed round gets a footnote
+
+
+def busy_note(r: dict, notes) -> str:
+    """A footnote when something outside the harness was busy during one of the row's rounds (or nothing measured)."""
+    ld = r.get("load")
+    if ld is None:
+        return notes.mark("Machine load during the rounds not recorded (results from before simbench measured it).")
+    cores = [x.get("other_cores") for x in ld if x.get("other_cores") is not None]
+    gpu = sorted({g for x in ld for g in x.get("other_gpu_processes") or []})
+    out = ""
+    if not cores:
+        out += notes.mark("Machine load during the rounds not measured (simbench measures it on Linux).")
+    if cores and max(cores) > BUSY_CORES:
+        out += notes.mark(f"{nice(r['sim'])}, {r['mode']}, {r['arenas']:,} arenas: other processes used up to "
+                          f"{max(cores):.2f} cores during a round.")
+    if gpu:
+        out += notes.mark(f"{nice(r['sim'])}, {r['mode']}, {r['arenas']:,} arenas: other processes on the GPU: {', '.join(gpu)}.")
+    return out
+
+
+def speed_tables(recs, notes=None) -> list[str]:
+    notes = notes or Notes()
     sp = [r for r in recs if r.get("kind") == "speed"]
     if not sp:
         return []
@@ -433,7 +463,7 @@ def speed_tables(recs) -> list[str]:
                 if r is None:
                     cells.append("-")
                 elif r.get("status") == "ok":
-                    cells.append(f"{fmt_k(r['arena_ticks_per_s'])} ({fmt_k(r['min'])}-{fmt_k(r['max'])})")
+                    cells.append(f"{fmt_k(r['arena_ticks_per_s'])} ({fmt_k(r['min'])}-{fmt_k(r['max'])})" + busy_note(r, notes))
                 else:
                     cells.append(r.get("status", "not run"))
             out.append(f"| {mode} | {arenas:,} | {threads if device == 'cpu' else '-'} | " + " | ".join(cells) + " |")
@@ -441,6 +471,8 @@ def speed_tables(recs) -> list[str]:
     not_run = latest([r for r in sp if r.get("status") == "not run"], lambda r: r["sim"])
     if not_run:
         out.append("Not run here: " + "; ".join(f"{nice(r['sim'])} ({r.get('why', '')})" for r in not_run.values()) + "\n")
+    if notes.texts:
+        out += notes.lines() + [""]
     return out
 
 
