@@ -664,7 +664,7 @@ def fill_doc(doc: Path, sec: dict, charts_dir: Path, made) -> None:
         t = readme.read_text(encoding="utf-8")
         if a in t and b in t:
             lines = [l for l in sec["glance"] if l.startswith("- **Whole games")]
-            block = a + "\n" + "\n".join(lines) + "\n\n[docs/BENCHMARKS.md](docs/BENCHMARKS.md) has every benchmark beside the other simulators.\n" + b
+            block = a + "\n\n" + "\n".join(lines) + "\n\n[docs/BENCHMARKS.md](docs/BENCHMARKS.md) has every benchmark beside the other simulators.\n\n" + b
             readme.write_text(t[:t.index(a)] + block + t[t.index(b) + len(b):], encoding="utf-8", newline="\n")
             print(f"filled: {readme}")
 
