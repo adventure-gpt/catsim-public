@@ -927,8 +927,10 @@ def model(recs) -> dict:
                 cells[(lv, s)] = {"v": f"{ex} / {n}", "s": small, "cls": cls}
                 if sm.get("bodies_only"):
                     notes.append(f"{who}'s whole games: the harness supplies the match flow it lacks (kickoff starts and the "
-                                 "countdown hold, restarts after goals, respawn spots); it runs its own physics, pads, boost and "
-                                 "demolitions; scored on bodies only.")
+                                 "countdown hold, restarts after goals, respawn spots; each kickoff and respawn puts a new car "
+                                 "there with the game's spawn boost, 33.3; at float precision the bodies are set to the game's "
+                                 "own floats at the first float row and at each later kickoff's start); it runs its own "
+                                 "physics, pads, boost and demolitions; scored on bodies only.")
             elif lv == "rlpr":
                 a = r["results"]["segments_120"]["total"]
                 cells[(lv, s)] = {"v": f"{a['pass_pct']:.2f}%", "s": f"of car-ticks within tolerance; mean error {a['mean_norm']:.2f}", "cls": ""}
