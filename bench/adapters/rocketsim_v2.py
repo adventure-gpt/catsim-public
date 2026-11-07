@@ -111,6 +111,11 @@ class RocketSimV2(Adapter):
                 ps = p.get_state()
                 ps.is_active, ps.cooldown = cd <= 0, float(max(cd, 0.0))
                 p.set_state(ps)
+        if st.get("new_round"):
+            for p in arena["a"].get_boost_pads():
+                ps = p.get_state()
+                ps.is_active, ps.cooldown = True, 0.0
+                p.set_state(ps)
         arena["pads_from_recording"] = bool(st.get("pads_from_recording"))
 
     def _controls(self, arena, inputs):

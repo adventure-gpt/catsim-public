@@ -18,6 +18,7 @@ from __future__ import annotations
 import ctypes
 import math
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -33,6 +34,14 @@ PRESET = {"Octane": "CAR_CONFIG_OCTANE", "Dominus": "CAR_CONFIG_DOMINUS", "Plank
           "Breakout": "CAR_CONFIG_BREAKOUT", "Hybrid": "CAR_CONFIG_HYBRID", "Merc": "CAR_CONFIG_MERC",
           "Psyclops": "CAR_CONFIG_PSYCLOPS"}
 INT = {1: "<B", 2: "<H", 4: "<I"}
+# (its own kickoff and respawn placement clears these: ResetCarCommonState)
+NEW_CAR_CLEARS = tuple("car_states." + k for k in (
+    "pad_frame_pos_valid", "boost_pad_touching", "restored_inv_inertia_valid", "vel_impulse_cache", "vel_impulse_cache_bt",
+    "ball_hit_info.is_valid", "ball_hit_info.hit_car_id", "just_respawned", "respawn_slot_override_plus1",
+    "world_contact.has_contact", "world_contact.contact_normal", "flip_rel_torque", "internal_jump_time",
+    "internal_flip_time", "internal_has_jumped", "internal_has_double_jumped", "internal_has_flipped",
+    "auto_flip_torque_scale", "supersonic_set_v3", "jump_time", "flip_time", "dodge_elapsed", "air_state",
+    "ball_contact_last_tick", "ball_contact_this_tick"))
 
 
 def local(p):
@@ -81,6 +90,10 @@ class RocketGPU(Adapter):
         commit = subprocess.run(["git", "-C", str(src), "rev-parse", "--short=10", "HEAD"], capture_output=True, text=True).stdout.strip()
         self.version = f"RocketGPU {commit or '?'} ({'CUDA' if self.cuda else 'CPU'} build)"
         self.about = f"RocketGPU's Python module, {'its CUDA build' if self.cuda else 'its CPU build'}"
+        # (its flip timer's live flag has no field in the state API: its offset from its own layout header)
+        head = src / "src" / "cpu_ispc" / "rg_types.isph"
+        found = re.search(r"uint8 flip_timer_live;\s*//\s*(\d+)", head.read_text()) if head.is_file() else None
+        self.flip_live_at = int(found.group(1)) if found and os.environ.get("RG_NO_FLIP_LIVE") is None else None
 
     # ------------------------------------------------------------ one arena (accuracy)
 
@@ -137,6 +150,8 @@ class RocketGPU(Adapter):
     def set_state(self, arena, st):
         rp, rs = self.rp, self.rs
         a = arena["a"]
+        if st.get("new_round"):
+            a.start_new_round_bodies()      # (the bodies' side of its own goal reset)
         for car, c in zip(arena["cars"], st["cars"]):
             if c is None:
                 continue
@@ -213,6 +228,43 @@ class RocketGPU(Adapter):
         if b.get("asleep"):
             f = self._fields(arena)
             a.set_full_state({"ball_states.sleeping": struct.pack("<I", 1)[:len(f["ball_states.sleeping"])]})
+        # a car just spawned: the state its own kickoff and respawn placement leaves (ResetCarCommonState), where a state
+        # set leaves something else (it takes the state as restored from a running car)
+        fresh = [k for k, c in enumerate(st["cars"]) if c is not None and c.get("new_car")]
+        if fresh:
+            f, new = self._fields(arena), {}
+            cap = self._ncap(f)
+            for key in NEW_CAR_CLEARS:
+                n = len(f[key]) // cap
+                buf = new.setdefault(key, bytearray(f[key]))
+                for k in fresh:
+                    buf[k * n:(k + 1) * n] = bytes(n)
+            for k in fresh:
+                if not st["cars"][k].get("prev_controls"):
+                    key = "car_states.last_controls"
+                    n = len(f[key]) // cap
+                    buf = new.setdefault(key, bytearray(f[key]))
+                    buf[k * n:(k + 1) * n] = bytes(n)
+                if not st["cars"][k].get("is_demoed"):
+                    key = "car_states.is_on_ground"
+                    n = len(f[key]) // cap
+                    buf = new.setdefault(key, bytearray(f[key]))
+                    buf[k * n:(k + 1) * n] = (1).to_bytes(n, "little")
+                key = "car_states.dodge_timeout"
+                buf = new.setdefault(key, bytearray(f[key]))
+                struct.pack_into("<f", buf, 4 * k, -1.0)
+            a.set_full_state({k: bytes(v) for k, v in new.items()})
+            if self.flip_live_at is not None:
+                lay = self.rs.Arena.dev_layouts()
+                raw = bytearray(a.dev_get_raw("car_states"))
+                for k in fresh:
+                    raw[k * lay["CarState"][1] + self.flip_live_at] = 1
+                a.dev_set_raw("car_states", bytes(raw))
+        if st.get("new_round"):
+            for p in a.get_boost_pads():
+                s = p.get_state()
+                s.is_active, s.cooldown, s.cur_locked_car_id, s.prev_locked_car_id, s.pickup_frac_q = 1, 0.0, 0, 0, 32768
+                p.set_state(s)
         arena["pads_from_recording"] = bool(st.get("pads_from_recording"))
 
     def segment(self, req, inputs, frames, full):

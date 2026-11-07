@@ -2,8 +2,9 @@
 
 A state is plain JSON: `{"cars": [car, ...], "ball": ball, "pads": [[x, y, cooldown], ...], "tick": n}`. A car given as
 null (and a ball given as null or left out) is left as it is: the whole-game runner places one car at a time (its
-respawn, a car's birth), and a car given only its body keeps the rest of its state. Units are the
-game's: positions uu, velocities uu/s, angular velocities rad/s, rotations as forward / right / up unit vectors, boost
+respawn, a car's birth), and a car given only its body keeps the rest of its state. `"new_round": true`: a new round's
+restart: every boost pad back, and whatever the simulator remembers between ticks about the old bodies gone. A car with `"new_car": true` was just spawned: whatever the simulator keeps about a car
+beyond the fields given starts new too. Units are the game's: positions uu, velocities uu/s, angular velocities rad/s, rotations as forward / right / up unit vectors, boost
 0 to 100. Which keys a car carries depends on the level (below); an adapter sets every key it can and ignores the rest.
 
 Level B "v3": the public state, RocketSim v3's whole `CarState` (the RocketGPU full-state suite's "public" rows): pos, fwd, right,

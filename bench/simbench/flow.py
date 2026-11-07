@@ -5,23 +5,25 @@ simulator whose adapter replays the round itself (the "game" request, simbench.g
 strict level C. Every other simulator gets this runner, through the requests every adapter has (new, set, step,
 bodies). The harness supplies the flow, each piece an assist named in the results:
 
-  - the first kickoff: each car is born as the game makes it, from the recording's own restart (its spots, the ticks
-    the restart runs before the bodies are born, each car's birth delay) put through catSim's spawn rules from the
-    dump, the same placement catSim's own run uses: the body's words at birth, at rest, at the tick it is born; the
-    simulator runs the drop itself; a car shows in its birth frame's row as its spawn actor, as the game samples it.
-    The ball is held on its spot where the countdown's first packet row shows it. Without catSim's package and data, or
-    for a recording without its restart, the first kickoff starts like the later ones;
-  - each later kickoff: the cars and the ball are put where the recording has them at the countdown's first packet row
-    (the packet's own rounding; velocities as the packet shows them, the ball at rest), when the recording has it (the
-    simulator's own goal, if it has one, doesn't matter: the ball's rows during a goal's replay are not scored);
+  - every kickoff: each car is born as the game makes it, from the recording's own spots put through catSim's spawn rules
+    from the dump, the same placement catSim's own run uses: the body's words at birth, at rest, at the tick it is born;
+    the simulator runs the drop itself; a car shows in its birth frame's row as its spawn actor, as the game samples it.
+    The first kickoff takes the recording's restart (the ticks it runs before the bodies are born, each car's birth
+    delay) and the ball at rest on its spot, as the recording has it. A later kickoff's restart comes where the game's
+    does, read from the recording (a goal's: at the start of a frame, the ball on its spawn in the game's own words and
+    falling through that frame's ticks, the cars born at the frame's end; a tied clock's, at the ball's touch: everything
+    at a frame's end), with every boost pad back. Without catSim's package and data, or for a recording without its
+    restart, a kickoff starts where the recording has it at the countdown's first packet row (the packet's own rounding);
   - every countdown: the cars are held (may-drive off) for as long as the recording's countdown lasts;
-  - a respawn: the car is put where the recording's packet first shows it again;
+  - a respawn: the car is born the same way at the recording's spot, at the end of the frame the game does it (a jump held
+    then isn't a press, and counts as used, as the game has it); without a spot, where the packet first shows it again;
   - a kickoff or a respawn puts a new car there (nothing carried over: jumps, flips, boosting, timers, wheel contacts)
     with the game's spawn boost (33.3; a packet shows 33.33);
   - a game recorded at float precision: the same, and at its first float row (a few ticks after the first countdown)
-    and at each later kickoff's start the bodies become the game's own floats, word for word; the rest of each car's
+    and at each later kickoff's birth frame the bodies become the game's own floats, word for word; the rest of each car's
     state stays what the simulator built from the same controls (a Bullet-units adapter takes the words themselves, a
     uu one the uu values its x 0.02 turns into those words, where they exist, and is compared in uu: the words x 50);
+  - the end of a match: a match that ends in a frame publishes the state before it (as the recording says, as catSim gets);
   - an adapter that takes them (caps "tick_frames") gets each tick's frame row: the frame's render alpha and
     duration (the game tests boost pads once per rendered frame, at its render fraction);
   - each rendered frame: its physics ticks (the frame's tick count at 120 Hz; a frame with no tick runs none), with the
@@ -29,8 +31,10 @@ bodies). The harness supplies the flow, each piece an assist named in the result
     through the countdown, so the button is let go first, as in the game).
 
 The simulator does what it models: physics, boost and pads, demolitions. Scored on bodies only (the adapters report
-bodies, not boost or pads): each car's and the ball's position, velocity and angular velocity at the packet's rounding,
-and the rotation within one unit of the packet's integer rotator (the harness converts the matrix itself).
+bodies, not boost or pads). A packet doesn't show a body's words: the game reads them first (speeds capped, the rotation
+through its packed quaternion), so the harness reads each simulator's bodies the same way (`packet_rows`), and compares each
+car's and the ball's position, velocity and angular velocity at the packet's rounding, and the rotation within one unit of
+the packet's integer rotator.
 """
 from __future__ import annotations
 
@@ -58,15 +62,19 @@ FRESH_CAR = {"on_ground": False, "wheels_contact": [False] * 4, "has_jumped": Fa
              "is_supersonic": False, "is_boosting": False, "is_demoed": False, "jump_ticks": 0, "flip_time": 0.0,
              "air_time": 0.0, "air_time_since_jump": 0.0, "handbrake_val": 0.0, "supersonic_grace_timer": 0.0,
              "time_since_boosted": 0.0, "boosting_time": 0.0, "auto_flip_timer": 0.0, "bump_cooldown_timer": 0.0,
-             "demo_respawn_timer": 0.0}
+             "demo_respawn_timer": 0.0, "bump_victim": -1, "last_extra_hit_tick": -1, "new_car": True}
 
-ASSISTS = ["the harness supplies only the match flow the simulator lacks: the first kickoff's cars born as the game makes "
-           "them (the recording's restart through catSim's spawn rules from the dump: each body at birth, the ticks it is "
-           "born at; the simulator runs the drop) with the ball held on its spot; each later kickoff's start where the "
-           "recording's countdown starts it, as its packet shows it (positions to 0.01 uu, velocities to 0.01 uu/s); at "
-           "float precision, the bodies then set to the game's own floats at the first float row and at each later "
-           "kickoff's start; a new car with the game's spawn boost, 33.3; the hold through each countdown, the restart "
-           "after each goal when the recording has it, and each demolished car's respawn spot from the recording",
+# Gravity's change of a falling body's speed in a tick, uu/s: a packet row's vertical speed says how many ticks a body
+# just born has been falling.
+FALL = 650.0 / 120.0
+
+ASSISTS = ["the harness supplies only the match flow the simulator lacks: each kickoff's cars born as the game makes them "
+           "(the recording's spots through catSim's spawn rules from the dump: each body at birth, the tick it is born at; "
+           "the simulator runs the drop); the ball on its spot at the first kickoff and, at each later one, at the game's "
+           "spawn from the restart's frame on, with every boost pad back; each demolished car's respawn the same way, at "
+           "the recording's spot; at float precision, the bodies then set to the game's own floats at the first float row "
+           "and at each later kickoff's birth; a new car with the game's spawn boost, 33.3; the hold through each countdown; "
+           "the end-of-match rule: a match that ends in a frame publishes the state before it",
            "the simulator runs everything it models itself: physics, boost and pads, demolitions and their respawn timers, "
            "goals (its own goal, if it has one, changes nothing the harness does)",
            "each frame's physics ticks counted from the recording", "scored on bodies only (no boost or pads)"]
@@ -81,17 +89,133 @@ def rot_vectors(rot):
     return fwd, up
 
 
-def rotator(fwd, right, up):
-    """A rotation's forward / right / up -> the Unreal rotator, rounded to whole units."""
-    pitch = math.atan2(fwd[2], math.hypot(fwd[0], fwd[1]))
-    yaw = math.atan2(fwd[1], fwd[0])
-    cp, sp, cy, sy = math.cos(pitch), math.sin(pitch), math.cos(yaw), math.sin(yaw)
-    # roll from the up vector against the rotation with roll 0
-    up0 = (-sp * cy, -sp * sy, cp)
-    right0 = (-sy, cy, 0.0)
-    roll = math.atan2(up[0] * right0[0] + up[1] * right0[1] + up[2] * right0[2], up[0] * up0[0] + up[1] * up0[1] + up[2] * up0[2])
-    k = 32768.0 / math.pi
-    return [round(pitch * k), round(yaw * k), round(roll * k)]
+# The game's caps on what it reads from a body: a car's and the ball's top speed (uu/s) and spin (rad/s).
+CAR_READ, BALL_READ = (2300.0, 5.5), (6000.0, 6.0)
+_PI = F32(np.frombuffer(bytes.fromhex("db0f4940"), np.float32)[0])
+_ROOT2, _ROOT_HALF = np.frombuffer(bytes.fromhex("f304b53f"), np.float32)[0], np.frombuffer(bytes.fromhex("f304353f"), np.float32)[0]
+_QUAT_MAX = F32((1 << 18) - 1)
+_SINES = np.sin((np.arange(16384, dtype=F32) * F32(2.0)) * _PI * F32(1.0 / 16384.0)).astype(F32)
+
+
+def _cap(v, m):
+    """The game's read of a velocity: over its top speed, that speed along the same direction (float32, in its order)."""
+    x, y, z = v[..., 0], v[..., 1], v[..., 2]
+    n2 = y * y + x * x + z * z
+    over = F32(m) * F32(m) < n2
+    if over.any():
+        k = F32(1.0) / np.sqrt(n2[over])
+        v[over] = F32(m) * (k[:, None] * v[over])
+    return v
+
+
+def _quat_of(r):
+    """A rotation matrix by rows (n, 3, 3) -> the game's quaternion (n, 4: x, y, z, w), in its order of float32 steps."""
+    q = np.zeros((len(r), 4), F32)
+    t = r[:, 0, 0] + r[:, 1, 1] + r[:, 2, 2]
+    pos = t > 0
+    if pos.any():
+        m = r[pos]
+        c = np.sqrt(t[pos] + F32(1.0))
+        f = F32(0.5) / c
+        q[pos, 3] = c * F32(0.5)
+        q[pos, 1] = (m[:, 0, 2] - m[:, 2, 0]) * f
+        q[pos, 2] = (m[:, 1, 0] - m[:, 0, 1]) * f
+        q[pos, 0] = (m[:, 2, 1] - m[:, 1, 2]) * f
+    neg = np.nonzero(~pos & ~np.isnan(t))[0]
+    if len(neg):
+        a, b, c = r[neg, 0, 0], r[neg, 1, 1], r[neg, 2, 2]
+        big = np.where(b <= a, np.where(a < c, 2, 0), np.where(b < c, 2, 1))
+        for i in range(3):
+            n = neg[big == i]
+            if not len(n):
+                continue
+            j, k = (i + 1) % 3, (i + 2) % 3
+            m = r[n]
+            c = np.sqrt(((m[:, i, i] - m[:, j, j]) - m[:, k, k]) + F32(1.0))
+            f = F32(0.5) / c
+            q[n, i] = c * F32(0.5)
+            q[n, 3] = (m[:, k, j] - m[:, j, k]) * f
+            q[n, j] = (m[:, j, i] + m[:, i, j]) * f
+            q[n, k] = (m[:, i, k] + m[:, k, i]) * f
+    return q
+
+
+def _pack_quat(q):
+    """The game's packed quaternion: the three smaller parts at 18 bits each, the largest rebuilt."""
+    x, y, z, w = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    n2 = y * y + x * x + z * z + w * w
+    k = F32(1.0) / np.sqrt(n2)
+    p = np.stack([k * x, k * y, k * z, k * w], 1)
+    ax, ay, az, aw = np.abs(p[:, 0]), np.abs(p[:, 1]), np.abs(p[:, 2]), np.abs(p[:, 3])
+    ia = np.where(ax < ay, 1, 0)
+    a = np.where(ax < ay, ay, ax)
+    ib = np.where(az < aw, 3, 2)
+    b = np.where(az < aw, aw, az)
+    which = np.where(b <= a, ia, ib)
+    out = np.zeros_like(q)
+    for big in range(4):
+        n = np.nonzero(which == big)[0]
+        if not len(n):
+            continue
+        rest = [i for i in range(4) if i != big]
+        sign = np.where(p[n, big] < 0, F32(-1.0), F32(1.0))
+        parts = []
+        for i in rest:
+            v = p[n, i] * sign
+            f = (v * _ROOT2 * F32(0.5) + F32(0.5)) * _QUAT_MAX
+            code = np.clip(np.rint(f + f + F32(0.5)).astype(np.int64) >> 1, 0, int(_QUAT_MAX))
+            g = code.astype(F32) / _QUAT_MAX - F32(0.5)
+            parts.append((g + g) * _ROOT_HALF)
+        ca, cb, cc = parts
+        whole = np.sqrt(((F32(1.0) - ca * ca) - cb * cb - cc * cc).astype(np.float64)).astype(F32)
+        vals = {rest[0]: ca, rest[1]: cb, rest[2]: cc, big: whole}
+        n2 = vals[0] * vals[0] + vals[1] * vals[1] + vals[2] * vals[2] + vals[3] * vals[3]
+        k = F32(1.0) / np.sqrt(n2)
+        for i in range(4):
+            out[n, i] = vals[i] * k
+    return out
+
+
+def _rotator_of(q):
+    """The game's quaternion -> its integer rotator (pitch, yaw, roll), in its order of float32 steps."""
+    x, y, z, w = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    z2, y2 = z + z, y + y
+    xx2, xw2 = (x + x) * x, (x + x) * w
+    r0 = np.stack([F32(1.0) - (z2 * z + y2 * y), z2 * w + y2 * x, z2 * x - y2 * w], 1)
+    r1 = np.stack([y2 * x - z2 * w, F32(1.0) - (z2 * z + xx2), xw2 + z2 * y], 1)
+    r2 = np.stack([y2 * w + z2 * x, z2 * y - xw2, F32(1.0) - (y2 * y + xx2)], 1)
+    fx, fy, fz = r0[:, 0], r0[:, 1], r0[:, 2]
+    k = F32(32768.0)
+    whole = lambda u: np.rint(u + u + F32(0.5)).astype(np.int64) >> 1
+    yaw = whole((np.arctan2(fy, fx) * k) / _PI)
+    span = np.sqrt((fy * fy + fx * fx).astype(np.float64)).astype(F32)
+    pitch = whole((np.arctan2(fz, span) * k) / _PI)
+    sy = _SINES[(yaw >> 2) & 0x3fff]
+    cy = _SINES[((yaw + 0x4000) >> 2) & 0x3fff]
+    a = (-sy, cy)
+    top = r2[:, 1] * a[1] + r2[:, 0] * a[0]
+    bot = r1[:, 1] * a[1] + r1[:, 0] * a[0]
+    roll = whole((np.arctan2(top, bot) * k) / _PI)
+    return np.stack([pitch, yaw, roll], 1)
+
+
+def packet_rows(view, bases, nc):
+    """Finish the scored view: the game's read of each body. A packet shows velocities under the game's caps (a body can
+    hold more inside a tick) and the rotation through its packed quaternion; the same read of every simulator's bodies,
+    catSim's own included (its Python package reads them with this rule). `bases`: (rows, bodies, 9), forward then right
+    then up, NaN where the row is already final (a spawn's actor) or absent."""
+    for b in range(nc + 1):
+        at = b * CAR_W if b < nc else nc * CAR_W
+        top, spin = CAR_READ if b < nc else BALL_READ
+        have = ~np.isnan(bases[:, b, 0])
+        if not have.any():
+            continue
+        rows = np.nonzero(have)[0]
+        view[rows, at + 4:at + 7] = _cap(view[rows, at + 4:at + 7].astype(F32), top)
+        view[rows, at + 7:at + 10] = _cap(view[rows, at + 7:at + 10].astype(F32), spin)
+        r = bases[rows, b].reshape(-1, 3, 3).transpose(0, 2, 1)
+        view[rows, at + 10:at + 13] = _rotator_of(_pack_quat(_quat_of(r)))
+    return view
 
 
 def _state_car(row):
@@ -123,18 +247,23 @@ def uu_of_bt(bt) -> np.ndarray:
     return uu
 
 
+def _body(w) -> dict:
+    """A body's Bullet words (origin, basis by rows, linear and angular velocity) as a state that sets them exactly: the
+    words themselves (`body_bt`) for adapters in Bullet units, and uu values that RocketSim's conversion turns back into
+    the same words for the others."""
+    w = np.asarray(w, np.float32)
+    basis = w[3:12].reshape(3, 3)
+    return {"pos": uu_of_bt(w[0:3]).astype(float).tolist(), "vel": uu_of_bt(w[12:15]).astype(float).tolist(),
+            "ang_vel": w[15:18].astype(float).tolist(), "fwd": basis[:, 0].astype(float).tolist(),
+            "right": basis[:, 1].astype(float).tolist(), "up": basis[:, 2].astype(float).tolist(),
+            "body_bt": w.astype(float).tolist() + [0.0, 0.0]}
+
+
 def _float_bodies(words, present, boost=None):
-    """A float row's bodies (the game's own Bullet words: origin, basis by rows, linear and angular velocity) as a
-    simbench state that sets them exactly: the words themselves (`body_bt`) for adapters in Bullet units, and uu values
-    that RocketSim's conversion turns back into the same words for the others. Bodies only (everything else as the simulator has it), unless
-    `boost` is given: then a whole start (a car the row doesn't have is demolished, a still car on its wheels)."""
-    def body(w):
-        w = np.asarray(w, np.float32)
-        basis = w[3:12].reshape(3, 3)
-        return {"pos": uu_of_bt(w[0:3]).astype(float).tolist(), "vel": uu_of_bt(w[12:15]).astype(float).tolist(),
-                "ang_vel": w[15:18].astype(float).tolist(), "fwd": basis[:, 0].astype(float).tolist(),
-                "right": basis[:, 1].astype(float).tolist(), "up": basis[:, 2].astype(float).tolist(),
-                "body_bt": w.astype(float).tolist() + [0.0, 0.0]}
+    """A float row's bodies as a simbench state that sets them exactly (`_body`). Bodies only (everything else as the
+    simulator has it), unless `boost` is given: then a whole start (a car the row doesn't have is demolished, a still car
+    on its wheels)."""
+    body = _body
     cars = []
     for k in range(len(words) - 1):
         if not present[k]:
@@ -165,11 +294,11 @@ def _given_float(rec, i, units):
 
 
 def birth(rec: dict, data) -> dict | None:
-    """The first kickoff's bodies as the game makes them: the recording's own start (its restart's spots, the ticks the
-    restart runs before the cars are born, each car's birth delay) put through catSim's spawn rules from the dump (the
-    same spot table and body placement catSim's own run uses). Per car its body at birth (the game's Bullet words, at
-    rest) and the physics ticks after the restart it is born at; the ball at the restart. None when catSim or its data
-    isn't there, or the recording has no restart."""
+    """Every body as the game makes it, from the recording's own spots put through catSim's spawn rules from the dump (the
+    same spot table and body placement catSim's own run uses). The first kickoff: per car its body at birth (the game's
+    Bullet words, at rest), the ticks after the restart it is born at, the spots its row shows. The ball at a restart.
+    `kicks`: the same for each later kickoff the recording names; `respawns`: per car, each respawn's body and spot. None
+    when catSim or its data isn't there, or the recording has no restart."""
     ops = rec.get("ops_C") or rec.get("ops")
     head = ops[:next((i for i, o in enumerate(ops) if o[0] == "frames"), len(ops))]
     start = next((o[1] for o in head if o[0] == "restart"), None)
@@ -196,26 +325,115 @@ def birth(rec: dict, data) -> dict | None:
     ball = a.ball_body()
     if ball is None or any(c is None for c in cars):
         return None
+    words = lambda: [np.asarray(a.car_body(k)[:18], F32) for k in range(nc)]
+    actor = lambda sp: [[float(s[0]), float(s[1]), float(s[2]), int(s[3])] for s in sp]
     delay = next((list(o[1]) for o in head if o[0] == "birth_delay"), [0] * nc)
     spots = start.get("spots") or next((o[1] for o in head if o[0] == "start_at_drop"), None)
+    kicks, respawns = [], [[] for _ in range(nc)]
+    last = spots
+    for o in ops:
+        if o[0] == "queue_kickoff":
+            a.restart([spot(s) for s in o[1]], 0)
+            kicks.append({"cars": words(), "actor": actor(o[1])})
+            last = o[1]
+        elif o[0] == "queue_respawn" and last:
+            k = int(o[1])
+            # (the other cars at any spots of theirs: a body's place is its own spot's and its own car's)
+            sp = [o[2] if j == k else last[j] for j in range(nc)]
+            a.restart([spot(s) for s in sp], 0)
+            respawns[k].append({"words": np.asarray(a.car_body(k)[:18], F32), "actor": actor([o[2]])[0]})
+    at_rest = next((bool(o[1]) for o in head if o[0] == "ball_at_rest"), False)
     return {"cars": [np.asarray(c[:18], F32) for c in cars], "ball": np.asarray(ball[:18], F32),
-            "delay": [int(x) for x in delay], "steps": int(start.get("steps", 0)),
-            "actor": [[float(s[0]), float(s[1]), float(s[2]), int(s[3])] for s in spots] if spots else None}
+            "delay": [int(x) for x in delay], "steps": int(start.get("steps", 0)), "ball_asleep": at_rest,
+            "actor": actor(spots) if spots else None, "kicks": kicks, "respawns": respawns}
 
 
 def _born(words, boost=SPAWN_BOOST):
     """A new car at its birth: its body words, at rest, nothing carried over."""
-    c = _float_bodies(np.stack([words, words]), np.array([True, True]), np.full(2, boost))["cars"][0]
+    c = _body(words)
     c.update(FRESH_CAR)
     c["boost"] = boost
     c["vel"] = [0.0, 0.0, 0.0]
     return c
 
 
+def _fallen(v) -> int:
+    """The ticks a body just born has been falling, from its packet row's vertical speed."""
+    return max(0, int(round(-float(v) / FALL)))
+
+
+def _back_to(steps, f, ticks) -> int:
+    """The frame at whose end the last `ticks` ticks up to frame f's end start."""
+    g, t = f, 0
+    while t < ticks and g >= 0:
+        t += int(steps[g])
+        g -= 1
+    return g
+
+
+def spawn_plan(rec: dict, births: dict | None) -> tuple[dict, dict, set, set]:
+    """Where the game's restarts and respawns come in the recording's frames. A later kickoff's first compared row can
+    come after the restart: the frames between show no packet, and the row's falling bodies say how many ticks they have
+    run. A goal's restart comes at the start of its frame: the ball falls through that frame's ticks, and the cars are
+    born at its end. A restart when the clock has run out, tied, comes as the ball touches the ground, inside a tick: the
+    ticks left in that frame run with the ball alone (none, so far), and the cars are born at its end. Returns per frame
+    the restart ({cars, actor, after: its ticks after the restart}) and the respawns ([(car, words, actor)]), and the
+    kickoff rows and (row, car) respawns they cover. Kickoffs and respawns the recording names no spot for aren't there:
+    the flow falls back to the packet for them."""
+    kick_at, back_at, kick_rows, back_rows = {}, {}, set(), set()
+    if births is None:
+        return kick_at, back_at, kick_rows, back_rows
+    tc, tb, ph = rec["truth_cars"], rec["truth_ball"], rec["truth_phase"]
+    judge = rec["frame_judge"].astype(np.int64)
+    steps = rec["frame_steps"].astype(np.int64)
+    nc = tc.shape[1]
+    frame_of = {int(j): i for i, j in enumerate(judge) if j >= 0}
+    rows = [r for r in range(1, len(ph)) if ph[r] == 1 and ph[r - 1] != 1]
+    if ph[0] != 1:
+        rows = rows[1:]         # (a recording that doesn't start in a countdown: its first kickoff is the restart's)
+    for i, r in enumerate(rows):
+        if i >= len(births["kicks"]) or r not in frame_of:
+            continue
+        f = frame_of[r]
+        in_car = next((_fallen(tc[r, k, 6]) for k in range(nc) if tc[r, k, 0] > 0.5), 0)
+        in_ball = _fallen(tb[r, 6])
+        f0 = _back_to(steps, f, in_car)
+        goal = ph[r - 1] == 4
+        if goal:
+            # the ball is ahead of the cars by the restart frame's ticks: a frame of no ticks can't be it if it is
+            while in_car > 0 and in_ball > in_car and f0 > 0 and steps[f0] == 0:
+                f0 -= 1
+        after = int(steps[f0]) if goal else max(0, in_ball - in_car)
+        kick_at[f0] = {**births["kicks"][i], "after": min(after, int(steps[f0])), "goal": bool(goal)}
+        kick_rows.add(r)
+    release = next((r for r in range(len(ph)) if ph[r] != 1), len(ph))
+    seen = [0] * nc
+    for k in range(nc):
+        present = tc[:, k, 0] > 0.5
+        for r in np.nonzero(present[1:] & ~present[:-1])[0] + 1:
+            r = int(r)
+            if r < release or (ph[r] == 1 and ph[r - 1] != 1) or r not in frame_of:
+                continue
+            spots = births["respawns"][k]
+            # the next respawn the recording names for this car that fits where the packet shows it
+            j = seen[k]
+            while j < len(spots) and max(abs(spots[j]["actor"][0] - tc[r, k, 1]), abs(spots[j]["actor"][1] - tc[r, k, 2])) > 20.0:
+                j += 1
+            if j >= len(spots):
+                continue
+            seen[k] = j + 1
+            f0 = _back_to(steps, frame_of[r], _fallen(tc[r, k, 6]))
+            back_at.setdefault(f0, []).append((k, spots[j]["words"], spots[j]["actor"]))
+            back_rows.add((r, k))
+    return kick_at, back_at, kick_rows, back_rows
+
+
 def _view_of(bodies, units, nc):
-    """Adapter bodies (cars then the ball, 18 floats) -> one row of the scored view (simbench.game's layout)."""
+    """Adapter bodies (cars then the ball, 18 floats) -> one row of the scored view (simbench.game's layout), before the
+    game's read of them (`packet_rows`), and the row's rotations for it."""
     k = 50.0 if units == "bt" else 1.0
     out = np.full(nc * CAR_W + BALL_W + PADS, np.nan, np.float64)
+    basis = np.full((nc + 1, 9), np.nan, F32)
     for b in range(nc + 1):
         x = bodies[b].astype(np.float64)
         present = bool(np.any(x != 0.0))
@@ -226,8 +444,8 @@ def _view_of(bodies, units, nc):
         out[at + 1:at + 4] = x[0:3] * k
         out[at + 4:at + 7] = x[3:6] * k
         out[at + 7:at + 10] = x[6:9]
-        out[at + 10:at + 13] = rotator(x[9:12], x[12:15], x[15:18])
-    return out
+        basis[b] = bodies[b][9:18]
+    return out, basis
 
 
 def _float_of(bodies, units, nc):
@@ -249,8 +467,8 @@ def _float_of(bodies, units, nc):
 def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: dict | None = None) -> np.ndarray:
     """Run one recording through the harness's flow. Returns the view: per compared row, cars then the ball (NaN where
     the simulator reports nothing: boost, pads). `fview` (float rows x bodies x 19), when given, gets the bodies after
-    each frame that has a float row. `births` (from `birth`): the first kickoff starts from the game's own spawn
-    instead of the countdown's first packet row."""
+    each frame that has a float row. `births` (from `birth`): the kickoffs and the respawns start from the game's own
+    spawns instead of the packet rows."""
     meta = rec["meta"]
     nc = int(meta["cars"])
     ops = rec.get("ops_C") or rec.get("ops")
@@ -262,6 +480,7 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: 
     tc, tb, ph = rec["truth_cars"], rec["truth_ball"], rec["truth_phase"]
     J = len(ph)
     view = np.full((J, nc * CAR_W + BALL_W + PADS), np.nan, np.float64)
+    bases = np.full((J, nc + 1, 9), np.nan, F32)
     judge = rec["frame_judge"].astype(np.int64)
     steps = rec["frame_steps"].astype(np.int64)
     ctl = np.asarray(rec["frame_controls"], F32)
@@ -287,6 +506,9 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: 
     if births is not None:
         # the first countdown's cars come from their births, not from the packet rows
         back = {r: v for r, v in back.items() if r >= release}
+    kick_at, back_at, kick_rows, back_rows = spawn_plan(rec, births)
+    for r, k in back_rows:
+        back[r].remove(k)
     frow = np.full(len(judge), -1, np.int64)
     if fview is not None:
         frow[rec["float_frame"].astype(np.int64)] = np.arange(len(rec["float_frame"]))
@@ -300,10 +522,17 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: 
     alpha = 0.5
 
     def frame_rows(f, n):
+        # the game tests pads at each rendered frame's render fraction: frames with no tick of their own before the next
+        # tick test on from this position, so the tick takes the last of those frames' fractions
         nonlocal alpha
-        a = float(alpha_s[f]) if alpha_s is not None else float("nan")
-        if math.isfinite(a):
-            alpha = a
+        g = f
+        while g < len(judge):
+            a = float(alpha_s[g]) if alpha_s is not None else float("nan")
+            if math.isfinite(a):
+                alpha = a
+            g += 1
+            if g < len(judge) and steps[g] > 0:
+                break
         dt = float(ftime[f]) if ftime is not None and math.isfinite(float(ftime[f])) and float(ftime[f]) > 0 else n / 120.0
         rows = np.zeros((n, TICK_FRAME), F32)
         rows[:, 0], rows[:, 1], rows[0, 2] = alpha, dt, n
@@ -319,8 +548,17 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: 
         whole = not started
         jr = int(nxt[f]) if nxt[f] >= 0 else 0
         boost = (np.full(nc, SPAWN_BOOST) if ph[jr] == 1 else tc[jr, :, 13]) if whole else None
-        worker.request({"op": "set", "arena": arena,
-                        "state": _float_bodies(rec["float_body"][i], rec["float_present"][i] > 0, boost)})
+        st = _float_bodies(rec["float_body"][i], rec["float_present"][i] > 0, boost)
+        if not whole and last is not None:
+            # a body already holding the game's words isn't touched (a set is never free of side effects in a simulator)
+            have, want = _float_of(last, units, nc), _given_float(rec, i, units)
+            same = (have == want).all(-1)
+            st["cars"] = [None if same[k] else c for k, c in enumerate(st["cars"])]
+            if same[nc]:
+                st["ball"] = None
+            if all(c is None for c in st["cars"]) and st["ball"] is None:
+                return last
+        worker.request({"op": "set", "arena": arena, "state": st})
         _, data = worker.request({"op": "bodies", "arena": arena})
         return np.frombuffer(data, F32).reshape(nc + 1, 18)
     def place(r):
@@ -336,20 +574,22 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: 
     # it): put there before the first frame after it
     framed = set(int(x) for x in judge if x >= 0)
     early = {}
-    for r0 in sorted(kick - framed - ({first_kick} if births is not None else set())):
+    for r0 in sorted(kick - framed - kick_rows - ({first_kick} if births is not None else set())):
         later = np.nonzero(judge > r0)[0]
         if len(later):
             early.setdefault(int(later[0]), []).append(r0)
     unborn = []
     left = []
+    born_cars = births["cars"] if births is not None else None
+    actor = list(births["actor"]) if births is not None and births.get("actor") else None
+    hold = {"is_demoed": True, "demo_respawn_timer": 1000.0}
     if births is not None:
         # the restart: the ball where the game puts it, no car yet; its own ticks; then the cars born by then
-        hold = {"is_demoed": True, "demo_respawn_timer": 1000.0}
         r0 = max(first_kick, 0)
         st = {"cars": [{**_born(births["cars"][k]), **hold} for k in range(nc)],
               # the ball held on its spot through the countdown, where the packet shows it (its body rests there)
               "ball": {"pos": [float(x) for x in tb[r0, 1:4]], "vel": [0.0, 0.0, 0.0], "ang_vel": [0.0, 0.0, 0.0],
-                       "fwd": [1.0, 0.0, 0.0], "right": [0.0, 1.0, 0.0], "up": [0.0, 0.0, 1.0], "asleep": False}}
+                       "fwd": [1.0, 0.0, 0.0], "right": [0.0, 1.0, 0.0], "up": [0.0, 0.0, 1.0], "asleep": births["ball_asleep"]}}
         worker.request({"op": "set", "arena": arena, "state": st})
         unborn = list(range(nc))
         left = [d - births["steps"] for d in births["delay"]]
@@ -359,6 +599,7 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: 
         started = True
 
     just_born = []
+    ball_spawned = False
 
     def born_now():
         # the cars whose birth has come (the game makes them at a frame's end, after its ticks)
@@ -366,46 +607,88 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: 
         now = [k for k in unborn if left[k] <= 0]
         if now:
             worker.request({"op": "set", "arena": arena, "state": {
-                "cars": [_born(births["cars"][k]) if k in now else None for k in range(nc)], "ball": None}})
+                "cars": [_born(born_cars[k]) if k in now else None for k in range(nc)], "ball": None}})
             unborn = [k for k in unborn if k not in now]
         just_born = now
         _, data = worker.request({"op": "bodies", "arena": arena})
         return np.frombuffer(data, F32).reshape(nc + 1, 18)
 
-    def seen(bodies):
+    def show(r, bodies):
+        # row r: the bodies as they stand, and the rotations for the game's read of them at the end
+        view[r], bases[r] = _view_of(bodies, units, nc)
+
+    def seen(r, bodies):
         # the packet after a car's birth frame shows its spawn actor (the body's place reaches the actor with the
-        # next physics tick): the harness's own spawn, as the recording's spot gives it
-        v = _view_of(bodies, units, nc)
-        if births is not None and births.get("actor"):
+        # next physics tick): the harness's own spawn, as the recording's spot gives it; the ball's the same
+        show(r, bodies)
+        if actor:
             for k in just_born:
-                x, y, z, yaw = births["actor"][k]
+                x, y, z, yaw = actor[k]
                 at = k * CAR_W
-                v[at + 1:at + 4] = [x, y, z]
-                v[at + 4:at + 10] = 0.0
-                v[at + 10:at + 13] = [0, yaw, 0]
-        return v
+                view[r, at + 1:at + 4] = [x, y, z]
+                view[r, at + 4:at + 10] = 0.0
+                view[r, at + 10:at + 13] = [0, yaw, 0]
+                bases[r, k] = np.nan
+        if ball_spawned:
+            at = nc * CAR_W
+            view[r, at + 1:at + 4] = np.asarray(births["ball"][:3], np.float64) * 50.0
+            view[r, at + 4:at + 13] = 0.0
+            bases[r, nc] = np.nan
+
+    def run_ticks(f, n):
+        # n of frame f's physics ticks, with its controls
+        nonlocal latch
+        drive = 0.0 if (nxt[f] >= 0 and ph[nxt[f]] == 1) else 1.0
+        inp = np.zeros((nc, TICK_CAR), F32)
+        inp[:, :8] = ctl[f]
+        inp[:, 8] = drive
+        held = ctl[f][:, 5] > 0.5
+        if drive == 0.0:
+            latch |= held
+        latch &= held
+        inp[latch, 5] = 0.0
+        req = {"op": "step", "arena": arena, "cars": nc, "ticks": int(n)}
+        body = inp.tobytes()
+        if tick_frames:
+            req["tick_frames"] = True
+            body += frame_rows(f, int(n)).tobytes()
+        _, data = worker.request(req, body)
+        return np.frombuffer(data, F32).reshape(nc + 1, 18)
     # the rows the recording compares between frames: after how many frames each comes
     judged_at = {}
-    nframes = 0
+    judged_from = {}                       # a row the recording compares after going back to a saved state: from which frame
+    nframes = saved = 0
+    restored = None
     for op in ops:
         if op[0] == "frames":
             nframes = int(op[1]) + int(op[2])
+            restored = None
+        elif op[0] == "save":
+            saved = nframes
+        elif op[0] == "restore":
+            restored = saved
         elif op[0] == "judge":
             judged_at.setdefault(nframes, []).append(int(op[1]))
+            if restored is not None:
+                judged_from[int(op[1])] = restored
+    snap_at = set(judged_from.values())
+    snaps = {}
     if births is not None:
         last = born_now()
         if first_kick not in framed and first_kick >= 0:
-            view[first_kick] = seen(last)
+            seen(first_kick, last)
     for f in range(len(judge)):
         r = int(judge[f])
+        if f in snap_at and last is not None:
+            snaps[f] = last
         for rj in judged_at.get(f, ()):
             if last is not None and started:
-                view[rj] = seen(last)
+                seen(rj, snaps.get(judged_from.get(rj), last))
         just_born = []                     # a birth shows as the spawn actor only in the frame it happens in
         for r0 in early.get(f, ()):
             last = place(r0)
             started = True
-            view[r0] = _view_of(last, units, nc)
+            show(r0, last)
         if f == float_start and not started:
             # a float row before any kickoff: the simulator starts there
             last = to_floats(f)
@@ -413,9 +696,34 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: 
             latch = ctl[f][:, 5] > 0.5     # a jump held in the frame before the start is not a new press
             fview[frow[f]] = _given_float(rec, int(frow[f]), units)
             if r >= 0:
-                view[r] = _view_of(last, units, nc)
+                show(r, last)
             continue
-        if r in kick and not (births is not None and r == first_kick):
+        ball_spawned = False
+        plan = kick_at.get(f)
+        if plan is not None:
+            # a later kickoff's restart: the frame's ticks before it, every car gone, the ball as the game makes it, every
+            # pad back; the ticks after it run with the ball alone; the frame's end makes the cars
+            before = int(steps[f]) - plan["after"]
+            if before > 0:
+                last = run_ticks(f, before)
+            born_cars, actor = plan["cars"], list(plan["actor"])
+            worker.request({"op": "set", "arena": arena, "state": {
+                "cars": [{**_born(born_cars[k]), **hold} for k in range(nc)],
+                "ball": {**_body(births["ball"]), "asleep": False}, "new_round": True}})
+            if plan["after"] > 0:
+                last = run_ticks(f, plan["after"])
+            unborn, left = list(range(nc)), [0] * nc
+            started = True
+            last = born_now()
+            ball_spawned = True
+            if fview is not None and frow[f] >= 0:
+                # at float precision, a later kickoff's birth frame is the game's own floats (the first one: see to_floats)
+                last = to_floats(f)
+                fview[frow[f]] = _given_float(rec, int(frow[f]), units)
+            if r >= 0:
+                seen(r, last)
+            continue
+        if r in kick and r not in kick_rows and not (births is not None and r == first_kick):
             # this frame ends where the recording's countdown starts: put everything there instead of running it
             last = place(r)
             started = True
@@ -423,27 +731,12 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: 
                 # at float precision, a later kickoff's start is the game's own floats (the first one: see to_floats)
                 last = to_floats(f)
                 fview[frow[f]] = _given_float(rec, int(frow[f]), units)
-            view[r] = _view_of(last, units, nc)
+            show(r, last)
             continue
         if not started:
             continue
         if steps[f] > 0:
-            drive = 0.0 if (nxt[f] >= 0 and ph[nxt[f]] == 1) else 1.0
-            inp = np.zeros((nc, TICK_CAR), F32)
-            inp[:, :8] = ctl[f]
-            inp[:, 8] = drive
-            held = ctl[f][:, 5] > 0.5
-            if drive == 0.0:
-                latch |= held
-            latch &= held
-            inp[latch, 5] = 0.0
-            req = {"op": "step", "arena": arena, "cars": nc, "ticks": int(steps[f])}
-            body = inp.tobytes()
-            if tick_frames:
-                req["tick_frames"] = True
-                body += frame_rows(f, int(steps[f])).tobytes()
-            _, data = worker.request(req, body)
-            last = np.frombuffer(data, F32).reshape(nc + 1, 18)
+            last = run_ticks(f, int(steps[f]))
         if unborn:
             left = [x - int(steps[f]) for x in left]
             last = born_now()
@@ -454,31 +747,53 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: 
                 "fwd": [1.0, 0.0, 0.0], "right": [0.0, 1.0, 0.0], "up": [0.0, 0.0, 1.0], "asleep": False}}})
             _, data = worker.request({"op": "bodies", "arena": arena})
             last = np.frombuffer(data, F32).reshape(nc + 1, 18)
+        if f in back_at:
+            # a respawn: a new car on the recording's spot at the frame's end (a jump held now isn't a press, and is
+            # counted as used, as the game has it); everything else stays as the simulator has it
+            now = {k: w for k, w, _ in back_at[f]}
+            cars_st = []
+            for k in range(nc):
+                if k not in now:
+                    cars_st.append(None)
+                    continue
+                c = _born(now[k])
+                c["prev_controls"] = [float(x) for x in ctl[f][k]]
+                if ctl[f][k, 5] > 0.5:
+                    c.update(has_jumped=True, has_double_jumped=True)
+                cars_st.append(c)
+            worker.request({"op": "set", "arena": arena, "state": {"cars": cars_st, "ball": None}})
+            _, data = worker.request({"op": "bodies", "arena": arena})
+            last = np.frombuffer(data, F32).reshape(nc + 1, 18)
+            for k, _, sp in back_at[f]:
+                if actor:
+                    actor[k] = sp
+                just_born.append(k)
         if f == float_start:
             last = to_floats(f)
         if r >= 0:
-            if r in back and last is not None:
+            if back.get(r) and last is not None:
                 # the respawned cars only: everything else (the ball too) stays as the simulator has it
                 st = {"cars": [_state_car(tc[r, k]) if k in back[r] else None for k in range(nc)], "ball": None}
                 worker.request({"op": "set", "arena": arena, "state": st})
                 _, data = worker.request({"op": "bodies", "arena": arena})
                 last = np.frombuffer(data, F32).reshape(nc + 1, 18)
             if last is not None:
-                view[r] = seen(last)
+                seen(r, last)
         if fview is not None and frow[f] >= 0 and last is not None:
             # the start row is the harness's own input (as a kickoff's start row is at packet precision)
             fview[frow[f]] = _given_float(rec, int(frow[f]), units) if f == float_start else _float_of(last, units, nc)
     # a compared row the recording judges after its last frame (the match's end)
     for rj in judged_at.get(len(judge), ()):
         if last is not None:
-            view[rj] = seen(last)
+            seen(rj, snaps.get(judged_from.get(rj), last))
     worker.request({"op": "close", "arena": arena})
-    return view
+    return packet_rows(view, bases, nc)
 
 
 def score(rec: dict, view: np.ndarray) -> dict:
-    """Bodies only: each body there or not as the packet says, position / velocity / angular velocity at the packet's
-    rounding, the rotation within one unit."""
+    """Bodies only, by simbench.game's rule for everything else: each body there or not as the packet says, position /
+    velocity / angular velocity at the packet's rounding; each car's rotation within one unit (the arctangent's last bit
+    is the C library's); the ball's rotation counted apart."""
     nc = int(rec["meta"]["cars"])
     J = len(rec["truth_phase"])
     sc = view[:, :nc * CAR_W].reshape(J, nc, CAR_W)
@@ -487,21 +802,21 @@ def score(rec: dict, view: np.ndarray) -> dict:
     seen = ~np.isnan(view[:, 0])
     off = np.zeros((J, nc + 1), bool)
 
-    def body_off(s, t):
+    def moved_off(s, t):
         bad = (np.abs(q_pos(np.nan_to_num(s[..., 1:4])) - t[..., 1:4]) > .002).any(-1)
         bad |= (np.abs(q_vel(np.nan_to_num(s[..., 4:7])) - t[..., 4:7]) > .002).any(-1)
         bad |= (np.abs(q_vel(np.nan_to_num(s[..., 7:10]), 1e4) - t[..., 7:10]) > 2e-5).any(-1)
-        d = np.abs(np.nan_to_num(s[..., 10:13]) - t[..., 10:13])
-        bad |= np.minimum(d, np.abs(d - 65536)).max(-1) > 1
         return bad
+    d = np.abs(np.nan_to_num(sc[:, :, 10:13]) - tc[:, :, 10:13])
+    turned = np.minimum(d, np.abs(d - 65536)).max(-1)
     pt = tc[:, :, 0] > 0.5
-    off[:, :nc] = (body_off(sc, tc) & pt) | ((np.nan_to_num(sc[:, :, 0]) > 0.5) != pt)
+    off[:, :nc] = ((moved_off(sc, tc) | (turned > 1)) & pt) | ((np.nan_to_num(sc[:, :, 0]) > 0.5) != pt)
     pb = tb[:, 0] > 0.5
     rot_known = ~np.isnan(tb[:, 10])
     tb2 = np.where(np.isnan(tb), 0.0, tb)
-    sb2 = sb.copy()
-    sb2[~rot_known, 10:13] = 0.0
-    off[:, nc] = (body_off(sb2, tb2) & pb) | ((np.nan_to_num(sb[:, 0]) > 0.5) != pb)
+    off[:, nc] = (moved_off(sb, tb2) & pb) | ((np.nan_to_num(sb[:, 0]) > 0.5) != pb)
+    ball_turned = np.abs(np.nan_to_num(sb[:, 10:13]) - tb2[:, 10:13])
+    ball_turned = np.minimum(ball_turned, np.abs(ball_turned - 65536)).max(-1)
     judged = (ph != 4) & seen
     bad = off.any(-1)
     idx = np.nonzero(bad & judged)[0]
@@ -516,7 +831,9 @@ def score(rec: dict, view: np.ndarray) -> dict:
                  "phase": {1: "countdown", 2: "kickoff", 3: "active"}.get(int(ph[r]), str(int(ph[r])))}
     return {"compared_rows": int(judged.sum()), "exact_rows": int((~bad & judged).sum()),
             "exact_pct": 100.0 * float((~bad & judged).sum()) / max(int(judged.sum()), 1),
-            "exact_to_the_end": first is None, "first_drift": first, "bodies_only": True}
+            "exact_to_the_end": first is None, "first_drift": first, "bodies_only": True,
+            "ball_rotation_compared": int((rot_known & seen).sum()), "ball_rotation_exact": int((rot_known & seen & (ball_turned == 0)).sum()),
+            "car_rotation_exact_rows": int((~(turned > 0).any(-1) & seen).sum())}
 
 
 HORIZONS = (1.0, 5.0, 30.0)

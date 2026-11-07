@@ -88,7 +88,7 @@ fn basis_bt(c: &Value) -> Option<[f32; 9]> {
 /// A state that only moves bodies or leaves cars out (the harness's flow mid-game: a respawn, a float-precision
 /// sync): everything else stays as the arena has it.
 fn partial(st: &Value) -> bool {
-    st["cars"].as_array().is_some_and(|cs| cs.iter().any(|c| c.is_null() || !has(c, "boost")))
+    st["ball"].is_null() || st["cars"].as_array().is_some_and(|cs| cs.iter().any(|c| c.is_null() || !has(c, "boost")))
 }
 
 fn car_state(c: &Value, team: u32, preset: u32, next: Option<&Value>) -> CarState {

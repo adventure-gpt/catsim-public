@@ -196,6 +196,11 @@ impl Sim for V3 {
                 va.a.edit_boost_pad_state(k, |s| s.cooldown = p[2].max(0.0));
             }
         }
+        if b(st, "new_round") {
+            for k in 0..va.a.num_boost_pads() {
+                va.a.edit_boost_pad_state(k, |s| s.cooldown = 0.0);
+            }
+        }
         Ok(())
     }
 
