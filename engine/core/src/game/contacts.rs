@@ -189,6 +189,43 @@ impl Arena {
         self.static_bodies().iter().position(|s| *s == id).map(BodyRef::World)
     }
 
+    /// The moving bodies (the ball and the cars on the field) in the collision world's object order. Each tick the
+    /// islands are numbered in this order and the solver takes the contact manifolds sorted by island, so it decides
+    /// which of a body's contacts is solved first. It has a history: a body that leaves the world (a demolished car, the
+    /// ball and the cars at a restart) is replaced in the array by the last one, and a new body goes on the end.
+    pub fn body_order(&self) -> Vec<BodyRef> {
+        let cw = &self.world.cw;
+        cw.objects.iter().copied().filter(|id| cw.bodies[id.0 as usize].flags & CF_STATIC == 0).filter_map(|id| self.body_ref(id)).collect()
+    }
+
+    /// Put the moving bodies in this object order (`body_order`'s layout: each of them once). The arena's parts keep
+    /// their places. On an error nothing has changed.
+    pub fn set_body_order(&mut self, order: &[BodyRef]) -> Result<(), String> {
+        let moving = |id: &BodyId| self.world.cw.bodies[id.0 as usize].flags & CF_STATIC == 0;
+        let ids = order.iter().map(|&r| self.body_id(r).filter(moving).ok_or_else(|| format!("{r:?} is not a moving body"))).collect::<Result<Vec<_>, _>>()?;
+        let cw = &mut self.world.cw;
+        let slots: Vec<usize> = (0..cw.objects.len()).filter(|&k| cw.bodies[cw.objects[k].0 as usize].flags & CF_STATIC == 0).collect();
+        let mut want = ids.clone();
+        let mut have: Vec<BodyId> = slots.iter().map(|&k| cw.objects[k]).collect();
+        want.sort();
+        have.sort();
+        if want != have {
+            return Err(format!("the order needs each moving body once: {order:?}"));
+        }
+        for (k, &id) in slots.into_iter().zip(&ids) {
+            cw.objects[k] = id;
+        }
+        // the dynamics world's own list of moving bodies (integration, continuous collision) has the same history
+        let rb = &mut self.world.rigid_bodies;
+        let slots: Vec<usize> = (0..rb.len()).filter(|&k| ids.contains(&rb[k])).collect();
+        if slots.len() == ids.len() {
+            for (k, &id) in slots.into_iter().zip(&ids) {
+                rb[k] = id;
+            }
+        }
+        Ok(())
+    }
+
     /// A body's broadphase handle (the number its pairs are ordered by).
     pub fn broadphase_handle(&self, r: BodyRef) -> Option<u16> {
         self.body_id(r).map(|id| self.world.cw.bodies[id.0 as usize].proxy as u16)
