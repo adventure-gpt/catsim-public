@@ -887,8 +887,8 @@ def whole_line(sm: dict, r: dict, floats: bool) -> str:
         return (f"{off:,} of {sm['compared_rows']:,} float rows off" if off < 1000 else f"{sm['exact_pct']:.2f}% of float rows exact")
     drifts = sorted(g["first_drift"]["seconds"] for g in r.get("recordings") or []
                     if "error" not in g and g.get("first_drift") and g["first_drift"].get("seconds") is not None)
-    if ex and drifts:
-        k = n - ex
+    k = n - ex
+    if ex and drifts and k <= 3:
         return f"{k} match{'es' if k != 1 else ''} drift{'' if k != 1 else 's'}, the first at {drifts[0]:.1f} s"
     return f"first drift after {(sm.get('first_drift_s') or {}).get('median', 0):.1f} s (median)"
 
@@ -953,14 +953,26 @@ def model(recs) -> dict:
     if flow_who:
         names = ", ".join(flow_who[:-1]) + (" and " if len(flow_who) > 1 else "") + flow_who[-1]
         one = len(flow_who) == 1
-        notes.append(f"Whole games for {names}: the harness supplies the match flow {'it' if one else 'each'} lacks. The "
-                     "first kickoff's cars are born as the game makes them (the recording's restart through catSim's "
-                     "spawn rules from the dump; the simulator runs the drop), each later kickoff starts where the "
-                     "packet shows it, and the harness holds the cars through each countdown, restarts after goals and "
-                     "puts respawned cars on the recording's spots. Each kickoff and respawn puts a new car there with "
-                     "the game's spawn boost, 33.3. At float precision the bodies are set to the game's own floats at the "
-                     f"first float row and at each later kickoff's start. {'It' if one else 'Each'} runs its own physics, "
-                     "pads, boost and demolitions; scored on bodies only.")
+        notes.append(f"Whole games for {names}: the harness supplies the match flow {'it' if one else 'each'} lacks. Every "
+                     "kickoff's and respawn's cars are born as the game makes them (the recording's spots through catSim's "
+                     "spawn rules from the dump, at the frame the game does it; the simulator runs the drop), each later "
+                     "restart puts the ball at the game's own spawn with every boost pad back, and the harness holds the "
+                     "cars through each countdown. Each kickoff and respawn puts a new car there with the game's spawn "
+                     "boost, 33.3. At float precision the bodies are set to the game's own floats at the first float row "
+                     "and at each later kickoff's birth, when they don't already hold them. "
+                     f"{'It' if one else 'Each'} runs its own physics, pads, boost and demolitions; scored on bodies only, "
+                     "read as the game reads a body for its packets (speeds capped, the rotation through its packed "
+                     "quaternion).")
+    # which machine ran what, when more than one did
+    speed_cpu = next((r["machine"]["cpu"] for r in recs if r.get("kind") == "speed" and r.get("machine")), None)
+    places = {}
+    for (sim, lv), r in acc.items():
+        if r.get("status") == "ok" and r.get("machine") and r["machine"]["cpu"] != speed_cpu and lv in ROWS:
+            places.setdefault(short_machine(r["machine"]), {}).setdefault(lv, set()).add(COL_NAMES.get(sim, nice(sim)))
+    for where, rows in places.items():
+        bits = [f"{ROWS[lv][0][0].lower()}{ROWS[lv][0][1:]}: {', '.join(sorted(rows[lv]))}" for lv in levels if lv in rows]
+        notes.append(f"Accuracy compares bits, so a row doesn't depend on its machine. These ran on {where}, every other row on the "
+                     f"machine named above: " + "; ".join(bits) + ".")
     seg_bt = max((r["summary"]["all"]["body_ticks"] for k, r in acc.items() if k[1] in ("A", "B", "Bp") and r.get("status") == "ok"), default=0)
     return {"cols": cols, "levels": levels, "cells": cells, "counts": counts, "notes": list(dict.fromkeys(notes)), "seg_bt": seg_bt}
 
@@ -1017,10 +1029,22 @@ def busy_any(recs) -> bool:
     return False
 
 
+def short_machine(m: dict) -> str:
+    """A machine in a few words: its CPU, thread count and card."""
+    cpu = re.sub(r"\(R\)|\(TM\)|CPU|@.*|\d+th Gen ", "", m["cpu"]).strip()
+    gpu = next((g.split(",")[0].replace("NVIDIA GeForce ", "") for g in (m.get("gpus") or [])), None)
+    return f"{cpu} ({m['threads']} threads" + (f", {gpu})" if gpu else ")")
+
+
 def subtitle(recs) -> str:
     ms = [r["machine"] for r in recs if r.get("machine")]
     if not ms:
         return "The same tests for every simulator."
+    speed = [r["machine"] for r in recs if r.get("kind") == "speed" and r.get("machine")]
+    if speed and len({short_machine(x) for x in ms}) > 1:
+        when = max((r.get("when", "")[:10] for r in recs), default="")
+        return (f"The same tests for every simulator, on one machine ({short_machine(speed[0])}"
+                + (f", {when}" if when else "") + ") but for the accuracy rows the notes name.")
     m = Counter(json.dumps(x, sort_keys=True) for x in ms).most_common(1)[0][0]
     m = json.loads(m)
     cpu = re.sub(r"\(R\)|\(TM\)|CPU|@.*|11th Gen ", "", m["cpu"]).strip()
@@ -1037,10 +1061,11 @@ def desc_of(lv, m) -> str:
 
 
 def md_accuracy(m) -> list[str]:
-    """The accuracy table in Markdown: one primary number per cell, its line beside it."""
-    out = ["| test | " + " | ".join(COL_NAMES.get(s, nice(s)) for s in m["cols"]) + " |", "|---|" + "---|" * len(m["cols"])]
+    """The accuracy tables in Markdown, one per group under its own title: one primary number per cell, its line beside it."""
+    out = []
     for title, lvs in groups(m):
-        out.append(f"| **{title}** |" + " |" * len(m["cols"]))
+        out += [f"### {title}", "", "| test | " + " | ".join(COL_NAMES.get(s, nice(s)) for s in m["cols"]) + " |",
+                "|---|" + "---|" * len(m["cols"])]
         for lv in lvs:
             lab, desc = ROWS[lv]
             row = []
@@ -1048,7 +1073,7 @@ def md_accuracy(m) -> list[str]:
                 c = m["cells"][(lv, s)]
                 row.append(f"**{c['v']}** {c['s']}".strip() if c["cls"] != "pend" else f"*{c['v']}*")
             out.append(f"| {lab}<br><sub>{desc_of(lv, m)}</sub> | " + " | ".join(row) + " |")
-    out.append("")
+        out.append("")
     out += [f"- {n}" for n in m["notes"]] + ([""] if m["notes"] else [])
     out += [f"**{a}**: {b}" + "  " for a, b in GLOSSARY] + [""]
     return out
@@ -1123,9 +1148,11 @@ table { border-collapse: collapse; width: 100%; min-width: 860px; }
 th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
 thead th { background: var(--head); font-size: 13px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 tbody tr:last-child td, tbody tr:last-child th { border-bottom: 0; }
-th.test { width: 300px; font-weight: 600; font-size: 14px; }
+th.test { font-weight: 600; font-size: 14px; }
 th.test small { display: block; font-weight: 400; color: var(--muted); font-size: 12.5px; margin-top: 2px; line-height: 1.4; }
-.group td, .group th { background: var(--head); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 6px 12px; }
+h3.acc-title { font-size: 15.5px; font-weight: 600; margin: 24px 0 8px; }
+table.acc { table-layout: fixed; }          /* fixed, so the simulator columns line up from one table to the next */
+col.test { width: 300px; }
 td { min-width: 108px; }
 td .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 td .s { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; line-height: 1.35; }
@@ -1153,7 +1180,7 @@ details p, details li { color: var(--muted); font-size: 14px; }
 details table { min-width: 0; font-size: 13px; margin: 8px 0 14px; }
 details h2 { font-size: 16px; margin: 22px 0 6px; } details h3 { font-size: 14px; margin: 18px 0 6px; }
 .small { color: var(--muted); font-size: 13px; }
-@media (max-width: 600px) { .row { grid-template-columns: 110px 1fr 60px; } th.test { width: 220px; } }
+@media (max-width: 600px) { .row { grid-template-columns: 110px 1fr 60px; } col.test { width: 220px; } }
 """
 
 
@@ -1168,11 +1195,13 @@ def page_html(recs, sec, m) -> str:
          'Light mode</span></label></div>',
          "<h2>Accuracy</h2>",
          '<p class="lead">Each test hands every simulator the same starting point and the game\'s recorded inputs, then '
-         'compares it with what the real game did. "Exact" means bit-for-bit equal.</p>',
-         '<div class="wrap"><table><thead><tr><th>Test</th>' + "".join(f"<th>{e(COL_NAMES.get(s, nice(s)))}</th>" for s in cols)
-         + "</tr></thead><tbody>"]
+         'compares it with what the real game did. "Exact" means bit-for-bit equal.</p>']
+    # one table per group, each under its own title; the same columns in each
+    head = "<thead><tr><th>Test</th>" + "".join(f"<th>{e(COL_NAMES.get(s, nice(s)))}</th>" for s in cols) + "</tr></thead>"
+    colgroup = '<colgroup><col class="test">' + "<col>" * len(cols) + "</colgroup>"
     for title, lvs in groups(m):
-        h.append(f'<tr class="group"><th colspan="{len(cols) + 1}">{e(title)}</th></tr>')
+        h.append(f'<h3 class="acc-title">{e(title)}</h3>')
+        h.append(f'<div class="wrap"><table class="acc" style="min-width:{300 + 124 * len(cols)}px">{colgroup}{head}<tbody>')
         for lv in lvs:
             lab, desc = ROWS[lv]
             h.append(f'<tr><th class="test">{e(lab)}<small>{e(desc_of(lv, m))}</small></th>')
@@ -1181,7 +1210,7 @@ def page_html(recs, sec, m) -> str:
                 cls = f' class="{c["cls"]}"' if c["cls"] else ""
                 h.append(f'<td{cls}><span class="v">{e(c["v"])}</span>' + (f'<span class="s">{e(c["s"])}</span>' if c["s"] else "") + "</td>")
             h.append("</tr>")
-    h.append("</tbody></table></div>")
+        h.append("</tbody></table></div>")
     if m["notes"]:
         h.append('<ul class="notes">' + "".join(f"<li>{e(n)}</li>" for n in m["notes"]) + "</ul>")
     h.append('<div class="how">' + "".join(f"<div><b>{e(a)}</b>{e(b)}</div>" for a, b in GLOSSARY) + "</div>")

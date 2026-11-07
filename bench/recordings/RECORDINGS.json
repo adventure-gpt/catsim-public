@@ -1,7 +1,7 @@
 {
  "format": 1,
- "about": "Our own real-game recordings for the whole-game levels C and D (python -m simbench recordings). Each was recorded from the real game (an RLBot match, Steam edition, 31 October to 4 November 2026) and holds only what a replay needs: the first kickoff's start, every frame's physics steps, duration, render alpha and controls, the level's spot choices or random-stream start, and the packet rows the score compares.",
- "release": "the files marked 'release' are in the release archive catsim-recordings-v1.tar (unpack it and point SIMBENCH_RECORDINGS at the folder); 'git' ones are in this folder",
+ "about": "Our own real-game recordings for the whole-game runs (python -m simbench recordings), recorded with a private recorder reading the game's memory during offline RLBot matches (Steam edition, 31 October to 4 November 2026). Each holds only what a replay needs: the first kickoff's start, every frame's physics steps, duration, render alpha and controls, the spot choices or the random stream's start, and the packet rows the score compares.",
+ "release": "the files marked 'release' are in the release archive catsim-recordings-v1.tar (unpack it and point SIMBENCH_RECORDINGS at the folder); 'git' ones are in this folder too",
  "game_data": "replay them with game data from catsim-dump on Steam build 26349479 (6 November 2026) or one with the same tables: the dump of build 25914621 holds Darkcar (Batmobile) values a float step or two off from the ones these games ran on, and the recordings with a Darkcar body drift with it",
  "recordings": [
   {
@@ -748,6 +748,63 @@
    "where": "release",
    "bytes": 9354389,
    "sha256": "915e61a67fa732645d18adc37e0b7b0b67727b32066c7a4b4f2639e9bc653174"
+  },
+  {
+   "file": "float_1v1_stadium_02.npz",
+   "name": "float_1v1_stadium_02",
+   "levels": [
+    "C"
+   ],
+   "mode": "1v1",
+   "map": "Stadium_P",
+   "seconds": 390.0,
+   "physics_ticks": 46797,
+   "frames": 47223,
+   "compared_rows": 46782,
+   "goals": 7,
+   "demolitions": 0,
+   "what": "a whole RLBot 1v1 match on Stadium_P from its first kickoff to its end (390.0 s of play, 46,797 physics ticks); a float-precision game with no packet-precision recording of its own, so it counts in the packet-precision games too (also in catsim-float-recordings-v1.tar)",
+   "where": "release",
+   "bytes": 12762415,
+   "sha256": "2a13a20c27495db1ac3af3c6cbd068ef0a63517f55fee6837d39422fcd63a40f"
+  },
+  {
+   "file": "float_2v2_stadium_02.npz",
+   "name": "float_2v2_stadium_02",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "Stadium_P",
+   "seconds": 372.3,
+   "physics_ticks": 44679,
+   "frames": 44910,
+   "compared_rows": 44645,
+   "goals": 4,
+   "demolitions": 1,
+   "what": "a whole RLBot 2v2 match on Stadium_P from its first kickoff to its end (372.3 s of play, 44,679 physics ticks); a float-precision game with no packet-precision recording of its own, so it counts in the packet-precision games too (also in catsim-float-recordings-v1.tar)",
+   "where": "release",
+   "bytes": 20919185,
+   "sha256": "11187555e30ca435778fec9cd9e5b8c629a0997014e7675b0aeee9bc58bb2485"
+  },
+  {
+   "file": "float_3v3_stadium_02.npz",
+   "name": "float_3v3_stadium_02",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 352.9,
+   "physics_ticks": 42344,
+   "frames": 42559,
+   "compared_rows": 42290,
+   "goals": 4,
+   "demolitions": 2,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (352.9 s of play, 42,344 physics ticks); a float-precision game with no packet-precision recording of its own, so it counts in the packet-precision games too (also in catsim-float-recordings-v1.tar)",
+   "where": "release",
+   "bytes": 28395006,
+   "sha256": "ea5e3463c063825990026f858ee78c103a7e94f8a222638dd13daf02aa671bfe"
   }
  ]
 }
