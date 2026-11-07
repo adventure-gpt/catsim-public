@@ -148,14 +148,21 @@ def frame_rows(frac, start_dt, i0: int, ticks: int) -> np.ndarray:
 
 def respawn_spots(truth, i0: int, ticks: int, nc: int, start: dict) -> list:
     """A demolished car's respawn spot is a choice the game made (the suite hands it to its simulators): read here from
-    where the car's body first shows in the recording, to the spawn table's 128 uu grid, facing the body's way."""
+    where the car's body first shows in the recording, to the spawn table's 128 uu grid, facing the body's way. A row
+    of the demolished body itself can come first (a spawn segment's first tick, not scored, can still hold it, in the
+    air and moving, or somewhere else entirely): the respawned body sits near the floor with no speed across it, and is
+    still there (within 50 uu) the next tick."""
     out = []
     for k in range(nc):
         spot = None
         if start["cars"][k].get("is_demoed"):
             for j in range(i0, min(i0 + ticks, len(truth))):
                 row = truth[j][k]
-                if np.any(row[:3]):
+                placed = float(row[2]) * 50.0 < 80.0 and abs(float(row[3])) * 50.0 < 50.0 and abs(float(row[4])) * 50.0 < 50.0
+                if placed and j + 1 < len(truth):
+                    nxt = truth[j + 1][k]
+                    placed = bool(np.any(nxt[:3])) and float(np.abs(nxt[:3].astype(np.float64) - row[:3]).max()) * 50.0 < 50.0
+                if np.any(row[:3]) and placed:
                     x, y = float(row[0]) * 50.0, float(row[1]) * 50.0
                     yaw = int(round(math.atan2(float(row[12]), float(row[9])) / math.pi * 32768.0 / 8192.0)) * 8192
                     spot = [round(x / 128.0) * 128.0, round(y / 128.0) * 128.0, float(yaw)]
