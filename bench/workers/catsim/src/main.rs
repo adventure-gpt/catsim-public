@@ -28,6 +28,8 @@ struct CatArena {
     a: Arena,
     inputs: Vec<VehicleInputs>,
     timer_hold: bool,
+    /// The render alpha the last frame ended with (none before a segment's first frame).
+    last_alpha: Option<f32>,
 }
 
 /// A car configuration (the full-state suite's `CarConfig`) -> catSim's preset (by hitbox length) and body (by spawn
@@ -271,7 +273,7 @@ impl Sim for Cat {
             }
         }
         Cat::kickoff(&mut a, cars.len());
-        Ok(CatArena { a, inputs: vec![VehicleInputs::default(); cars.len()], timer_hold: false })
+        Ok(CatArena { a, inputs: vec![VehicleInputs::default(); cars.len()], timer_hold: false, last_alpha: None })
     }
 
     fn set_state(&self, ca: &mut CatArena, st: &Value) -> Result<(), String> {
@@ -405,6 +407,7 @@ impl Sim for Cat {
         Cat::controls(ca, &ticks[0]);
         let n = ticks.len() as i32;
         let alpha = alpha.clamp(0.0, 1.0);
+        let frame_time = Cat::frame_time(ca, n, frame_time, alpha);
         for j in 1..n {
             let mut c = ca.a.clone();
             c.frame_with_time(&ca.inputs, j, frame_time, alpha);
@@ -423,6 +426,22 @@ impl Sim for Cat {
 }
 
 impl Cat {
+    /// A frame's time when the recording has none (the harness gives 1/120 s a tick then): what the render alpha says.
+    /// The game's physics accumulator gains the frame's time and loses 1/120 s a physics step, and the alpha is what is
+    /// left over 1/120 s, so the frame took its steps plus the alpha's change (on the suite's kickoffs this puts the
+    /// countdown's end on the game's tick 927 times in 932, against 883 at 1/120 s a tick). A segment's first frame
+    /// keeps 1/120 s a tick: the recorder's capture of the start state moves the alpha there (at 690 of the suite's 720
+    /// respawn starts), and the game's clocks don't see it.
+    fn frame_time(ca: &mut CatArena, steps: i32, given: f32, alpha: f32) -> f32 {
+        let nominal = (f64::from(steps) / 120.0) as f32;
+        let t = match ca.last_alpha {
+            Some(prev) if given == nominal => ((f64::from(steps) + f64::from(alpha) - f64::from(prev)) / 120.0) as f32,
+            _ => given,
+        };
+        ca.last_alpha = Some(alpha);
+        if t > 0.0 { t } else { given }
+    }
+
     fn controls(ca: &mut CatArena, inp: &[[f32; TICK_CAR]]) {
         let held = !ca.timer_hold;
         let a = &mut ca.a;

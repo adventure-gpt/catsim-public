@@ -15,6 +15,20 @@ const SLOTS: usize = 8;
 /// catSim's wheel w is the suite's (RocketSim order) wheel SUITE_WHEEL[w]: left and right swapped.
 const SUITE_WHEEL: [usize; 4] = [1, 0, 3, 2];
 
+/// The clock value one frame of `dt` earlier: the float `x` whose sum `x + dt` is exactly `v` (catSim's frame adds `dt`
+/// to it again), the nearest to `v - dt`; `v - dt` when no float adds up to `v`.
+fn before_add(v: f32, dt: f32) -> f32 {
+    let x = v - dt;
+    let step = |x: f32, k: i32| f32::from_bits((x.to_bits() as i32 + if x >= 0.0 { k } else { -k }) as u32);
+    for k in [0, -1, 1, -2, 2, -3, 3] {
+        let y = step(x, k);
+        if y + dt == v {
+            return y;
+        }
+    }
+    x
+}
+
 pub struct Full<'a> {
     index: &'a Value,
     data: &'a [u8],
@@ -236,7 +250,8 @@ impl<'a> Full<'a> {
         // a countdown in progress: stage 1 the 1 s start timer, stage 2 the update loop ("3 - fires" left)
         let stage = self.whole_u("env_states.countdown_phase") as u8;
         if stage == 1 || stage == 2 {
-            let cnt = self.whole_f("env_states.countdown_count").first().copied().unwrap_or(0.0) - dt0;
+            // catSim's first frame adds that frame's time to the clock again: start it where that sum gives the state's
+            let cnt = before_add(self.whole_f("env_states.countdown_count").first().copied().unwrap_or(0.0), dt0);
             let fires = self.whole_u("env_states.countdown_fires") as u8 as i32;
             let mut c = CountdownClock::new(3, 3);
             if stage == 1 {
@@ -256,6 +271,18 @@ impl<'a> Full<'a> {
                     c.set_driving(false);
                 }
             }
+        }
+        // the moving bodies in the state's object order (`sap_obj`: 0 the ball, k + 1 car k): the islands are numbered
+        // in it, and the solver takes a body's contacts in the island order it gives
+        let so = self.raw("solver_scratch.bp.sweep.sap_obj");
+        let n = (self.whole_u("solver_scratch.bp.sweep.sap_obj_count") as u8 as usize).min(so.len());
+        let order: Vec<BodyRef> = so[..n].iter().filter_map(|&o| match o as usize {
+            0 => Some(BodyRef::Ball),
+            k if k <= nc && !demoed[k - 1] => Some(BodyRef::Car(k - 1)),
+            _ => None,
+        }).collect();
+        if order.len() == a.body_order().len() {
+            a.set_body_order(&order)?;
         }
         // the contact memory, in catSim's layout
         if std::env::var_os("SIMBENCH_CATSIM_NO_CONTACTS").is_none() {
@@ -286,8 +313,9 @@ impl<'a> Full<'a> {
         let now = a.contacts()?;
         let parts = a.world_parts();
         let statics = self.raw("solver_scratch.bp.sweep.sap_static_id");
+        // (handle 0 is the broadphase's unused first handle: its id reads 0 too, which is also the first mesh's)
         let static_of = |id: i16| -> Option<BodyRef> {
-            let h = statics.chunks_exact(2).position(|c| i16::from_le_bytes([c[0], c[1]]) == id)?;
+            let h = statics.chunks_exact(2).enumerate().skip(1).find(|(_, c)| i16::from_le_bytes([c[0], c[1]]) == id)?.0;
             parts.iter().position(|p| p.handle as usize == h).map(BodyRef::World)
         };
         let car = |raw: u32| -> Option<BodyRef> {
@@ -395,7 +423,9 @@ impl<'a> Full<'a> {
                 }
             }
             // a car and the ball, or two cars: A and B as the state stores them, matched to catSim's body0 and body1 by
-            // where A's local point lands (pos_a_bt is A's point in the world)
+            // where A's local point lands (pos_a_bt is A's point in the world). The normal is turned to point from B to
+            // A, as a contact's point on A is its point on B plus normal times distance: the state's car-car normals
+            // mostly point the other way (121 of 126 points over the suite's starts; its car-ball ones 530 of 531 so)
             1 | 3 => {
                 let (pre, slot) = if kind == 1 {
                     ("ball_car", ra - 1)
@@ -405,12 +435,21 @@ impl<'a> Full<'a> {
                 };
                 let cnt = cnt_of(&format!("{pre}.count"), slot);
                 let (la, lb, nn, d, pa) = (fv(&format!("{pre}.points.local_a_bt")), fv(&format!("{pre}.points.local_b_bt")), fv(&format!("{pre}.points.normal")), fv(&format!("{pre}.points.distance_bt")), fv(&format!("{pre}.points.pos_a_bt")));
+                let pb = fv(&format!("{pre}.points.pos_b_bt"));
                 for i in 0..cnt.min(4) {
                     let q = slot * 4 + i;
                     if 3 * q + 2 >= la.len() || 3 * q + 2 >= pa.len() || q >= d.len() {
                         continue;
                     }
                     let (x, y, n, p) = (at(&la, q), at(&lb, q), at(&nn, q), at(&pa, q));
+                    let n = if 3 * q + 2 < pb.len() {
+                        let o = at(&pb, q);
+                        let off = |s: f32| (p.x - (o.x + s * n.x * d[q])).abs().max((p.y - (o.y + s * n.y * d[q])).abs()).max((p.z - (o.z + s * n.z * d[q])).abs());
+                        let (fwd, back) = (off(1.0), off(-1.0));
+                        if back < fwd || (back == fwd && kind == 3) { v3(-n.x, -n.y, -n.z) } else { n }
+                    } else {
+                        n
+                    };
                     let gap = |t: &catsim::math::Transform, l: Vec3| {
                         let r = &t.basis.r;
                         let w = v3(r[0].x * l.x + r[0].y * l.y + r[0].z * l.z + t.origin.x, r[1].x * l.x + r[1].y * l.y + r[1].z * l.z + t.origin.y, r[2].x * l.x + r[2].y * l.y + r[2].z * l.z + t.origin.z);
