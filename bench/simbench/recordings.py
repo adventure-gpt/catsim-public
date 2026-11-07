@@ -106,7 +106,7 @@ def run(names, setup_env, levels, limit, jobs, out_dir, emit):
                             if floats:
                                 fview = flat[nview:].reshape(fview.shape)
                         if floats:
-                            r = dict(game.score_float(rec, fview), packet=r, bodies_only=harness_flow)
+                            r = dict(game.score_float(rec, fview, units if harness_flow else "bt"), packet=r, bodies_only=harness_flow)
                     except Exception as e:  # noqa: BLE001
                         if w.p.poll() is not None:
                             w = sims.start(name, setup_env, Path(out_dir))

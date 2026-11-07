@@ -1106,7 +1106,8 @@ tbody tr:last-child td, tbody tr:last-child th { border-bottom: 0; }
 th.test { width: 300px; font-weight: 600; font-size: 14px; }
 th.test small { display: block; font-weight: 400; color: var(--muted); font-size: 12.5px; margin-top: 2px; line-height: 1.4; }
 .group td, .group th { background: var(--head); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 6px 12px; }
-td .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+td { min-width: 108px; }
+td .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 td .s { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; line-height: 1.35; }
 td.exact { background: var(--exact); } td.exact .v { color: var(--exact-ink); }
 td.near { background: var(--near); }

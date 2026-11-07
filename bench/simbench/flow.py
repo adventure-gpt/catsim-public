@@ -36,8 +36,9 @@ PRESET_OF_BODY = {23: "Octane", 4906: "Octane", 5039: "Octane", 403: "Dominus", 
                   7012: "Hybrid", 803: "Plank", 24: "Plank", 7052: "Plank", 30: "Merc", 4780: "Merc", 4782: "Psyclops"}
 
 ASSISTS = ["the harness supplies only the match flow the simulator lacks: each kickoff's start (cars and ball where the "
-           "recording's countdown starts them) and the hold through the countdown, the restart after each goal when the "
-           "recording has it, and each demolished car's respawn spot from the recording",
+           "recording's countdown starts them, as its packet shows them: positions to 0.01 uu, velocities to 0.01 uu/s; at "
+           "float precision, the game's own floats at the first float row) and the hold through the countdown, the "
+           "restart after each goal when the recording has it, and each demolished car's respawn spot from the recording",
            "the simulator runs everything it models itself: physics, boost and pads, demolitions and their respawn timers, "
            "goals (its own goal, if it has one, changes nothing the harness does)",
            "each frame's physics ticks counted from the recording", "scored on bodies only (no boost or pads)"]
@@ -73,6 +74,66 @@ def _state_car(row):
             "fwd": f.tolist(), "right": right.tolist(), "up": u.tolist(), "boost": float(row[13])}
 
 
+def uu_of_bt(bt) -> np.ndarray:
+    """Bullet units -> the uu floats a uu simulator (RocketSim's x 0.02 into Bullet units) turns into the same Bullet
+    words: x 50, then the nearest neighbour that survives, where one does (not every word has one)."""
+    bt = np.asarray(bt, np.float32)
+    k = np.float32(0.02)
+    uu = (bt * np.float32(50.0)).astype(np.float32)
+    bad = (uu * k).astype(np.float32) != bt
+    for step in (1, -1, 2, -2, 3, -3):
+        if not bad.any():
+            break
+        cand = uu.copy()
+        for _ in range(abs(step)):
+            cand = np.where(bad, np.nextafter(cand, np.float32(np.inf if step > 0 else -np.inf)), cand).astype(np.float32)
+        ok = bad & ((cand * k).astype(np.float32) == bt)
+        uu = np.where(ok, cand, uu)
+        bad &= ~ok
+    return uu
+
+
+def _float_bodies(words, present, boost=None):
+    """A float row's bodies (the game's own Bullet words: origin, basis by rows, linear and angular velocity) as a
+    simbench state that sets them exactly: the words themselves (`body_bt`) for adapters in Bullet units, and uu values
+    that RocketSim's conversion turns back into the same words for the others. Bodies only (everything else as the simulator has it), unless
+    `boost` is given: then a whole start (a car the row doesn't have is demolished, a still car on its wheels)."""
+    def body(w):
+        w = np.asarray(w, np.float32)
+        basis = w[3:12].reshape(3, 3)
+        return {"pos": uu_of_bt(w[0:3]).astype(float).tolist(), "vel": uu_of_bt(w[12:15]).astype(float).tolist(),
+                "ang_vel": w[15:18].astype(float).tolist(), "fwd": basis[:, 0].astype(float).tolist(),
+                "right": basis[:, 1].astype(float).tolist(), "up": basis[:, 2].astype(float).tolist(),
+                "body_bt": w.astype(float).tolist() + [0.0, 0.0]}
+    cars = []
+    for k in range(len(words) - 1):
+        if not present[k]:
+            cars.append(None if boost is None else {"is_demoed": True, "demo_respawn_timer": 3.0})
+            continue
+        c = body(words[k])
+        if boost is not None:
+            c["boost"] = float(boost[k])
+            if float(np.abs(np.asarray(words[k][12:15], np.float32)).max()) * 50.0 <= 1.0:
+                c.update({"on_ground": True, "wheels_contact": [True] * 4})
+        cars.append(c)
+    ball = body(words[-1])
+    if boost is not None:
+        ball["asleep"] = False
+    return {"cars": cars, "ball": ball}
+
+
+def _given_float(rec, i, units):
+    """Float row i as the harness hands it over, in the simulator's units (what it reports holding those words)."""
+    out = np.zeros((rec["float_body"].shape[1], 19), F32)
+    out[:, 0] = rec["float_present"][i] > 0
+    out[:, 1:] = rec["float_body"][i]
+    if units == "uu":
+        out[:, 1:4] = (out[:, 1:4] * F32(50.0)).astype(F32)
+        out[:, 13:16] = (out[:, 13:16] * F32(50.0)).astype(F32)
+    out[out[:, 0] == 0] = 0.0
+    return out
+
+
 def _view_of(bodies, units, nc):
     """Adapter bodies (cars then the ball, 18 floats) -> one row of the scored view (simbench.game's layout)."""
     k = 50.0 if units == "bt" else 1.0
@@ -92,18 +153,17 @@ def _view_of(bodies, units, nc):
 
 
 def _float_of(bodies, units, nc):
-    """Adapter bodies -> [present, origin, basis by rows, linear velocity, angular velocity] in Bullet units (a "uu"
-    simulator's values are divided by 50 in float32: they can't be the game's words, and are scored as they come)."""
+    """Adapter bodies -> [present, origin, basis by rows, linear velocity, angular velocity] in the simulator's own units
+    (a uu simulator's position and velocity stay in uu: game.score_float compares them with the game's words in uu)."""
     out = np.zeros((nc + 1, 19), F32)
-    k = F32(50.0)
     for b in range(nc + 1):
         x = bodies[b]
         if not np.any(x != 0.0):
             continue
         out[b, 0] = 1.0
-        out[b, 1:4] = x[0:3] / k if units == "uu" else x[0:3]
+        out[b, 1:4] = x[0:3]
         out[b, 4:13] = np.stack([x[9:12], x[12:15], x[15:18]], -1).reshape(9)
-        out[b, 13:16] = x[3:6] / k if units == "uu" else x[3:6]
+        out[b, 13:16] = x[3:6]
         out[b, 16:19] = x[6:9]
     return out
 
@@ -147,8 +207,30 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.nd
     if fview is not None:
         frow[rec["float_frame"].astype(np.int64)] = np.arange(len(rec["float_frame"]))
     latch = np.zeros(nc, bool)             # jump held since a countdown: not a press until let go
+    # a float-precision game: the match runs from its first kickoff as at packet precision, and at its first float row
+    # the bodies become the game's own floats, word for word (the rest of each car's state is what the simulator built
+    # through the countdown, from the same controls)
+    float_start = int(np.nonzero(frow >= 0)[0][0]) if fview is not None and (frow >= 0).any() else -1
+
+    def to_floats(f):
+        i = int(frow[f])
+        whole = not started
+        boost = tc[int(nxt[f]) if nxt[f] >= 0 else 0, :, 13] if whole else None
+        worker.request({"op": "set", "arena": arena,
+                        "state": _float_bodies(rec["float_body"][i], rec["float_present"][i] > 0, boost)})
+        _, data = worker.request({"op": "bodies", "arena": arena})
+        return np.frombuffer(data, F32).reshape(nc + 1, 18)
     for f in range(len(judge)):
         r = int(judge[f])
+        if f == float_start and not started:
+            # a float row before any kickoff: the simulator starts there
+            last = to_floats(f)
+            started = True
+            latch = ctl[f][:, 5] > 0.5     # a jump held in the frame before the start is not a new press
+            fview[frow[f]] = _given_float(rec, int(frow[f]), units)
+            if r >= 0:
+                view[r] = _view_of(last, units, nc)
+            continue
         if r in kick:
             # this frame ends where the recording's countdown starts: put everything there instead of running it
             st = {"cars": [_state_car(tc[r, k]) if tc[r, k, 0] > 0.5 else {"is_demoed": True, "demo_respawn_timer": 3.0}
@@ -159,6 +241,9 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.nd
             started = True
             _, data = worker.request({"op": "bodies", "arena": arena})
             last = np.frombuffer(data, F32).reshape(nc + 1, 18)
+            if f == float_start:
+                last = to_floats(f)
+                fview[frow[f]] = _given_float(rec, int(frow[f]), units)
             view[r] = _view_of(last, units, nc)
             continue
         if not started:
@@ -175,6 +260,8 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.nd
             inp[latch, 5] = 0.0
             _, data = worker.request({"op": "step", "arena": arena, "cars": nc, "ticks": int(steps[f])}, inp.tobytes())
             last = np.frombuffer(data, F32).reshape(nc + 1, 18)
+        if f == float_start:
+            last = to_floats(f)
         if r >= 0:
             if r in back and last is not None:
                 k_ = 50.0 if units == "bt" else 1.0
@@ -190,7 +277,8 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.nd
             if last is not None:
                 view[r] = _view_of(last, units, nc)
         if fview is not None and frow[f] >= 0 and last is not None:
-            fview[frow[f]] = _float_of(last, units, nc)
+            # the start row is the harness's own input (as a kickoff's start row is at packet precision)
+            fview[frow[f]] = _given_float(rec, int(frow[f]), units) if f == float_start else _float_of(last, units, nc)
     # a compared row the recording judges after its frames (the match's end)
     for op in ops:
         if op[0] == "judge" and last is not None and np.isnan(view[int(op[1]), 0]):

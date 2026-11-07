@@ -184,6 +184,29 @@ class RocketGPU(Adapter):
         if "fwd" in b:
             bs.rot_mat.forward, bs.rot_mat.right, bs.rot_mat.up = v(b["fwd"]), v(b["right"]), v(b["up"])
         a.ball.set_state(bs)
+        # a state given as the game's own Bullet words (a float-precision game's start): those words exactly, in the
+        # fields RocketGPU's bodies are read from, after the v3 setter has set everything else
+        exact = [(k, c) for k, c in enumerate(st["cars"]) if c is not None and c.get("body_bt")]
+        if exact or b.get("body_bt"):
+            f, new = self._fields(arena), {}
+            put = lambda key, k, v: self._put(f, new, key, k, "<3f", *[float(x) for x in v])
+            for k, c in exact:
+                w = c["body_bt"]
+                put("car_states.pos_bt", k, w[0:3])
+                put("car_states.basis_forward", k, w[3:12:3])
+                put("car_states.basis_right", k, w[4:12:3])
+                put("car_states.basis_up", k, w[5:12:3])
+                put("car_states.vel_bt", k, w[12:15])
+                put("car_states.internal_ang_vel", k, w[15:18])
+            if b.get("body_bt"):
+                w = b["body_bt"]
+                put("ball_states.pos_bt", 0, w[0:3])
+                put("ball_states.basis_forward", 0, w[3:12:3])
+                put("ball_states.basis_right", 0, w[4:12:3])
+                put("ball_states.basis_up", 0, w[5:12:3])
+                put("ball_states.vel_bt", 0, w[12:15])
+                put("ball_states.ang_vel", 0, w[15:18])
+            a.set_full_state({k: bytes(v) for k, v in new.items()})
         if b.get("asleep"):
             f = self._fields(arena)
             a.set_full_state({"ball_states.sleeping": struct.pack("<I", 1)[:len(f["ball_states.sleeping"])]})

@@ -115,14 +115,20 @@ def unpack(req: dict, payload: bytes) -> dict:
     return out
 
 
-def score_float(rec: dict, fview: np.ndarray) -> dict:
-    """Float rows: each body there or not as in the game and, when both have it, its 18 Bullet words bit-equal."""
+def score_float(rec: dict, fview: np.ndarray, units: str = "bt") -> dict:
+    """Float rows: each body there or not as in the game and, when both have it, its 18 Bullet words bit-equal. A uu
+    simulator (it takes and reports positions and velocities in uu, and keeps Bullet words only inside) is compared in
+    uu: the game's words x 50 in float32, what it reports when it holds exactly those words."""
     nc = int(rec["meta"]["cars"])
     R = len(rec["float_frame"])
     v = np.asarray(fview, F32).reshape(R, nc + 1, 19)
     sim_p, sim_w = v[..., 0] > 0.5, np.ascontiguousarray(v[..., 1:]).view(np.uint32)
     p = rec["float_present"] > 0
-    w = np.ascontiguousarray(rec["float_body"], F32).view(np.uint32)
+    t = np.array(rec["float_body"], F32)
+    if units == "uu":
+        t[..., 0:3] = (t[..., 0:3] * F32(50.0)).astype(F32)
+        t[..., 12:15] = (t[..., 12:15] * F32(50.0)).astype(F32)
+    w = np.ascontiguousarray(t, F32).view(np.uint32)
     off = (sim_p != p) | (p & sim_p & (sim_w != w).any(-1))
     bad = off.any(-1)
     judged = rec["float_phase"] != 4
