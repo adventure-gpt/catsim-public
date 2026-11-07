@@ -20,7 +20,7 @@ from pathlib import Path
 
 __all__ = ["init", "Arena", "Ball", "Car", "CarConfig", "CarControls", "CarState", "BallState", "BoostPad",
            "BoostPadState", "GameMode", "Team", "Vec", "RotMat", "Angle", "Loadout", "__version__"]
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 _lib_mod = None
 _data_dir: Path | None = None

@@ -7,8 +7,9 @@ like RocketSim's, so most RocketSim scripts run with one changed import.
 
 ![How catSim gets its game data](docs/how-it-works.svg)
 
-> **Status: 0.1.1.** Soccar on Stadium_P and UF_Night_P at 120 ticks a second. The dumper is tested on Steam
-> and on the Epic Games edition (both give byte-identical game data). On PyPI as
+> **Status: 0.1.2.** Soccar on Stadium_P and UF_Night_P at 120 ticks a second. The dumper is tested on Steam
+> and on the Epic Games edition (both give byte-identical game data), and knows Steam build 26349479 (the
+> 2026-11-06 update). On PyPI as
 > [`catsim-rl`](https://pypi.org/project/catsim-rl/) (the name `catsim` there is an unrelated project).
 
 ## Five minutes to a first simulation
@@ -33,7 +34,8 @@ catsim-dump --out catsim_data --keys path/to/keys.txt
 
 It finds the game by itself, checks the version and writes `catsim_data/` (about three minutes, most of it
 reading the car items; add `--skip-items` for a ten-second dump without them). It only reads files: it never
-starts the game and never touches a running one. More in [docs/DUMPER.md](docs/DUMPER.md).
+starts the game and never touches a running one. Right after a game update it may not know the new version yet;
+it then says what to do. More in [docs/DUMPER.md](docs/DUMPER.md).
 
 **4. Simulate:**
 
