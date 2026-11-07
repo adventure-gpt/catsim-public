@@ -179,13 +179,14 @@ class RocketGPU(Adapter):
                 h = int(c["last_extra_hit_tick"])
                 s.last_extra_hit_tick = h if h >= 0 else None
             car.set_state_v3(s)
-        b = st["ball"]
-        bs = a.ball.get_state()
-        v = lambda x: rp.Vec3(float(x[0]), float(x[1]), float(x[2]))
-        bs.pos, bs.vel, bs.ang_vel = v(b["pos"]), v(b["vel"]), v(b["ang_vel"])
-        if "fwd" in b:
-            bs.rot_mat.forward, bs.rot_mat.right, bs.rot_mat.up = v(b["fwd"]), v(b["right"]), v(b["up"])
-        a.ball.set_state(bs)
+        b = st["ball"] or {}            # a ball given as null stays as it is
+        if b:
+            bs = a.ball.get_state()
+            v = lambda x: rp.Vec3(float(x[0]), float(x[1]), float(x[2]))
+            bs.pos, bs.vel, bs.ang_vel = v(b["pos"]), v(b["vel"]), v(b["ang_vel"])
+            if "fwd" in b:
+                bs.rot_mat.forward, bs.rot_mat.right, bs.rot_mat.up = v(b["fwd"]), v(b["right"]), v(b["up"])
+            a.ball.set_state(bs)
         # a state given as the game's own Bullet words (a float-precision game's start): those words exactly, in the
         # fields RocketGPU's bodies are read from, after the v3 setter has set everything else
         exact = [(k, c) for k, c in enumerate(st["cars"]) if c is not None and c.get("body_bt")]

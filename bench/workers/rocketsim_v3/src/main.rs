@@ -172,15 +172,18 @@ impl Sim for V3 {
             });
         }
         let ball = &st["ball"];
-        let (pos, m, vel, ang) = phys(ball);
-        va.a.edit_ball_state(|s| {
-            s.phys.pos = pos;
-            s.phys.rot_mat = m;
-            s.phys.vel = vel;
-            s.phys.ang_vel = ang;
-        });
-        if b(ball, "asleep") {
-            va.a.sleep_ball();
+        // a ball given as null stays as it is
+        if !ball.is_null() {
+            let (pos, m, vel, ang) = phys(ball);
+            va.a.edit_ball_state(|s| {
+                s.phys.pos = pos;
+                s.phys.rot_mat = m;
+                s.phys.vel = vel;
+                s.phys.ang_vel = ang;
+            });
+            if b(ball, "asleep") {
+                va.a.sleep_ball();
+            }
         }
         if let Some(pads) = st.get("pads").and_then(Value::as_array) {
             for p in pads {

@@ -202,6 +202,10 @@ impl Sim for Rlmax {
                 }
             }
             let bl = &st["ball"];
+            if bl.is_null() {
+                // a ball given as null stays as it is
+                return Ok(());
+            }
             let cur = ra.a.ball();
             let mut bs = ball_state(bl);
             if !has(bl, "asleep") {

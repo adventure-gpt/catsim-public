@@ -70,7 +70,8 @@ class MySim(Adapter):
             car.set(pos=c["pos"], forward=c["fwd"], up=c["up"], vel=c["vel"], ang_vel=c["ang_vel"], boost=c.get("boost", 33.3))
             # FILL IN: every hidden field you can take, e.g. if "is_jumping" in c: car.jumping = c["is_jumping"]
         b = state["ball"]
-        arena["arena"].ball.set(pos=b["pos"], vel=b["vel"], ang_vel=b["ang_vel"])
+        if b is not None:                   # a ball given as null stays as it is
+            arena["arena"].ball.set(pos=b["pos"], vel=b["vel"], ang_vel=b["ang_vel"])
 
     def step(self, arena, inputs, ticks=1, frame=None):
         for car, r in zip(arena["cars"], inputs):

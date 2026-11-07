@@ -1,7 +1,8 @@
 """The simulator-neutral state the harness hands to adapters, and what each accuracy level gives.
 
 A state is plain JSON: `{"cars": [car, ...], "ball": ball, "pads": [[x, y, cooldown], ...], "tick": n}`. A car given as
-null (and a missing ball) is left as it is: the whole-game runner places one car at a time (its respawn). Units are the
+null (and a ball given as null or left out) is left as it is: the whole-game runner places one car at a time (its
+respawn, a car's birth), and a car given only its body keeps the rest of its state. Units are the
 game's: positions uu, velocities uu/s, angular velocities rad/s, rotations as forward / right / up unit vectors, boost
 0 to 100. Which keys a car carries depends on the level (below); an adapter sets every key it can and ignores the rest.
 

@@ -360,14 +360,17 @@ impl Sim for Cat {
             }
             a.set_car_hidden(i, &h);
         }
-        let mut ball = body_of(&st["ball"], true);
-        // RocketSim v3's `asleep` is set for the kickoff ball too, which the game keeps awake (resting on its spot)
-        let bp = vec3(&st["ball"]["pos"]);
-        if ball.asleep && bp.x.abs() < 1e-3 && bp.y.abs() < 1e-3 && (bp.z - 92.75).abs() < 0.01 {
-            ball.asleep = false;
-            ball.deactivation_time = 1.0;
+        // a ball given as null (or left out) stays as it is
+        if !st["ball"].is_null() {
+            let mut ball = body_of(&st["ball"], true);
+            // RocketSim v3's `asleep` is set for the kickoff ball too, which the game keeps awake (resting on its spot)
+            let bp = vec3(&st["ball"]["pos"]);
+            if ball.asleep && bp.x.abs() < 1e-3 && bp.y.abs() < 1e-3 && (bp.z - 92.75).abs() < 0.01 {
+                ball.asleep = false;
+                ball.deactivation_time = 1.0;
+            }
+            a.set_ball_body(&ball);
         }
-        a.set_ball_body(&ball);
         if let Some(pads) = st.get("pads").and_then(Value::as_array) {
             for p in pads {
                 let p = simbench_kit::v3(p);

@@ -85,7 +85,9 @@ class CatsimPy(Adapter):
                 h[29:37] = [float(x) for x in st["next_controls"][i]]      # guess: already holding the first tick's
             a.set_car_hidden(i, h)
         b = st["ball"]
-        if "body_bt" in b:
+        if b is None:                   # a ball given as null stays as it is
+            pass
+        elif "body_bt" in b:
             a.set_ball_body(list(b["body_bt"]))
         else:
             p, v = b["pos"], b["vel"]

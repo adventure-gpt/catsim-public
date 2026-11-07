@@ -157,6 +157,54 @@ def _given_float(rec, i, units):
     return out
 
 
+def birth(rec: dict, data) -> dict | None:
+    """The first kickoff's bodies as the game makes them: the recording's own start (its restart's spots, the ticks the
+    restart runs before the cars are born, each car's birth delay) put through catSim's spawn rules from the dump (the
+    same spot table and body placement catSim's own run uses). Per car its body at birth (the game's Bullet words, at
+    rest) and the physics ticks after the restart it is born at; the ball at the restart. None when catSim or its data
+    isn't there, or the recording has no restart."""
+    ops = rec.get("ops_C") or rec.get("ops")
+    head = ops[:next((i for i, o in enumerate(ops) if o[0] == "frames"), len(ops))]
+    start = next((o[1] for o in head if o[0] == "restart"), None)
+    if start is None or not data:
+        return None
+    try:
+        import catsim
+        catsim.init(str(data), silent=True)
+        lib = catsim._lib()
+    except Exception:  # noqa: BLE001
+        return None
+    cfg = next(o[1] for o in head if o[0] == "arena")
+    spot = lambda s: ([float(s[0]), float(s[1]), float(s[2])], [0, int(s[3]), 0])
+    a = lib.NativeArena([(str(c["body"]), int(c["team"])) for c in cfg["cars"]], str(data), True,
+                        cfg.get("map", "Stadium_P"), False, int(cfg.get("countdown_ticks", 2)))
+    for o in head:
+        if o[0] == "start_at_drop":
+            a.start_at_drop(None if o[1] is None else [spot(s) for s in o[1]])
+        elif o[0] == "restart":
+            # every car born at the restart, before any tick: its body as the game places it
+            a.restart(None if o[1].get("spots") is None else [spot(s) for s in o[1]["spots"]], 0)
+    nc = len(cfg["cars"])
+    cars = [a.car_body(k) for k in range(nc)]
+    ball = a.ball_body()
+    if ball is None or any(c is None for c in cars):
+        return None
+    delay = next((list(o[1]) for o in head if o[0] == "birth_delay"), [0] * nc)
+    spots = start.get("spots") or next((o[1] for o in head if o[0] == "start_at_drop"), None)
+    return {"cars": [np.asarray(c[:18], F32) for c in cars], "ball": np.asarray(ball[:18], F32),
+            "delay": [int(x) for x in delay], "steps": int(start.get("steps", 0)),
+            "actor": [[float(s[0]), float(s[1]), float(s[2]), int(s[3])] for s in spots] if spots else None}
+
+
+def _born(words, boost=SPAWN_BOOST):
+    """A new car at its birth: its body words, at rest, nothing carried over."""
+    c = _float_bodies(np.stack([words, words]), np.array([True, True]), np.full(2, boost))["cars"][0]
+    c.update(FRESH_CAR)
+    c["boost"] = boost
+    c["vel"] = [0.0, 0.0, 0.0]
+    return c
+
+
 def _view_of(bodies, units, nc):
     """Adapter bodies (cars then the ball, 18 floats) -> one row of the scored view (simbench.game's layout)."""
     k = 50.0 if units == "bt" else 1.0
@@ -191,10 +239,11 @@ def _float_of(bodies, units, nc):
     return out
 
 
-def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.ndarray:
+def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: dict | None = None) -> np.ndarray:
     """Run one recording through the harness's flow. Returns the view: per compared row, cars then the ball (NaN where
     the simulator reports nothing: boost, pads). `fview` (float rows x bodies x 19), when given, gets the bodies after
-    each frame that has a float row."""
+    each frame that has a float row. `births` (from `birth`): the first kickoff starts from the game's own spawn
+    instead of the countdown's first packet row."""
     meta = rec["meta"]
     nc = int(meta["cars"])
     ops = rec.get("ops_C") or rec.get("ops")
@@ -226,6 +275,11 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.nd
         nxt[f] = after
     started = False
     last = None
+    first_kick = min(kick) if kick else -1
+    release = next((r for r in range(J) if ph[r] != 1), J)
+    if births is not None:
+        # the first countdown's cars come from their births, not from the packet rows
+        back = {r: v for r, v in back.items() if r >= release}
     frow = np.full(len(judge), -1, np.int64)
     if fview is not None:
         frow[rec["float_frame"].astype(np.int64)] = np.arange(len(rec["float_frame"]))
@@ -275,12 +329,72 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.nd
     # it): put there before the first frame after it
     framed = set(int(x) for x in judge if x >= 0)
     early = {}
-    for r0 in sorted(kick - framed):
+    for r0 in sorted(kick - framed - ({first_kick} if births is not None else set())):
         later = np.nonzero(judge > r0)[0]
         if len(later):
             early.setdefault(int(later[0]), []).append(r0)
+    unborn = []
+    left = []
+    if births is not None:
+        # the restart: the ball where the game puts it, no car yet; its own ticks; then the cars born by then
+        hold = {"is_demoed": True, "demo_respawn_timer": 1000.0}
+        r0 = max(first_kick, 0)
+        st = {"cars": [{**_born(births["cars"][k]), **hold} for k in range(nc)],
+              # the ball held on its spot through the countdown, where the packet shows it (its body rests there)
+              "ball": {"pos": [float(x) for x in tb[r0, 1:4]], "vel": [0.0, 0.0, 0.0], "ang_vel": [0.0, 0.0, 0.0],
+                       "fwd": [1.0, 0.0, 0.0], "right": [0.0, 1.0, 0.0], "up": [0.0, 0.0, 1.0], "asleep": False}}
+        worker.request({"op": "set", "arena": arena, "state": st})
+        unborn = list(range(nc))
+        left = [d - births["steps"] for d in births["delay"]]
+        if births["steps"] > 0:
+            inp = np.zeros((nc, TICK_CAR), F32)
+            worker.request({"op": "step", "arena": arena, "cars": nc, "ticks": births["steps"]}, inp.tobytes())
+        started = True
+
+    just_born = []
+
+    def born_now():
+        # the cars whose birth has come (the game makes them at a frame's end, after its ticks)
+        nonlocal unborn, just_born
+        now = [k for k in unborn if left[k] <= 0]
+        if now:
+            worker.request({"op": "set", "arena": arena, "state": {
+                "cars": [_born(births["cars"][k]) if k in now else None for k in range(nc)], "ball": None}})
+            unborn = [k for k in unborn if k not in now]
+        just_born = now
+        _, data = worker.request({"op": "bodies", "arena": arena})
+        return np.frombuffer(data, F32).reshape(nc + 1, 18)
+
+    def seen(bodies):
+        # the packet after a car's birth frame shows its spawn actor (the body's place reaches the actor with the
+        # next physics tick): the harness's own spawn, as the recording's spot gives it
+        v = _view_of(bodies, units, nc)
+        if births is not None and births.get("actor"):
+            for k in just_born:
+                x, y, z, yaw = births["actor"][k]
+                at = k * CAR_W
+                v[at + 1:at + 4] = [x, y, z]
+                v[at + 4:at + 10] = 0.0
+                v[at + 10:at + 13] = [0, yaw, 0]
+        return v
+    # the rows the recording compares between frames: after how many frames each comes
+    judged_at = {}
+    nframes = 0
+    for op in ops:
+        if op[0] == "frames":
+            nframes = int(op[1]) + int(op[2])
+        elif op[0] == "judge":
+            judged_at.setdefault(nframes, []).append(int(op[1]))
+    if births is not None:
+        last = born_now()
+        if first_kick not in framed and first_kick >= 0:
+            view[first_kick] = seen(last)
     for f in range(len(judge)):
         r = int(judge[f])
+        for rj in judged_at.get(f, ()):
+            if last is not None and started:
+                view[rj] = seen(last)
+        just_born = []                     # a birth shows as the spawn actor only in the frame it happens in
         for r0 in early.get(f, ()):
             last = place(r0)
             started = True
@@ -294,7 +408,7 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.nd
             if r >= 0:
                 view[r] = _view_of(last, units, nc)
             continue
-        if r in kick:
+        if r in kick and not (births is not None and r == first_kick):
             # this frame ends where the recording's countdown starts: put everything there instead of running it
             last = place(r)
             started = True
@@ -323,29 +437,34 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.nd
                 body += frame_rows(f, int(steps[f])).tobytes()
             _, data = worker.request(req, body)
             last = np.frombuffer(data, F32).reshape(nc + 1, 18)
+        if unborn:
+            left = [x - int(steps[f]) for x in left]
+            last = born_now()
+        if births is not None and r == first_kick:
+            # the ball where the countdown's first packet row shows it, held there as at packet precision
+            worker.request({"op": "set", "arena": arena, "state": {"cars": [None] * nc, "ball": {
+                "pos": [float(x) for x in tb[r, 1:4]], "vel": [0.0, 0.0, 0.0], "ang_vel": [0.0, 0.0, 0.0],
+                "fwd": [1.0, 0.0, 0.0], "right": [0.0, 1.0, 0.0], "up": [0.0, 0.0, 1.0], "asleep": False}}})
+            _, data = worker.request({"op": "bodies", "arena": arena})
+            last = np.frombuffer(data, F32).reshape(nc + 1, 18)
         if f == float_start:
             last = to_floats(f)
         if r >= 0:
             if r in back and last is not None:
-                k_ = 50.0 if units == "bt" else 1.0
-                b = last[nc].astype(np.float64)
-                ball = {"pos": (b[0:3] * k_).tolist(), "vel": (b[3:6] * k_).tolist(), "ang_vel": b[6:9].tolist(),
-                        "fwd": b[9:12].tolist(), "right": b[12:15].tolist(), "up": b[15:18].tolist(),
-                        "body_bt": None}
-                ball.pop("body_bt")
-                st = {"cars": [_state_car(tc[r, k]) if k in back[r] else None for k in range(nc)], "ball": ball}
+                # the respawned cars only: everything else (the ball too) stays as the simulator has it
+                st = {"cars": [_state_car(tc[r, k]) if k in back[r] else None for k in range(nc)], "ball": None}
                 worker.request({"op": "set", "arena": arena, "state": st})
                 _, data = worker.request({"op": "bodies", "arena": arena})
                 last = np.frombuffer(data, F32).reshape(nc + 1, 18)
             if last is not None:
-                view[r] = _view_of(last, units, nc)
+                view[r] = seen(last)
         if fview is not None and frow[f] >= 0 and last is not None:
             # the start row is the harness's own input (as a kickoff's start row is at packet precision)
             fview[frow[f]] = _given_float(rec, int(frow[f]), units) if f == float_start else _float_of(last, units, nc)
-    # a compared row the recording judges after its frames (the match's end)
-    for op in ops:
-        if op[0] == "judge" and last is not None and np.isnan(view[int(op[1]), 0]):
-            view[int(op[1])] = _view_of(last, units, nc)
+    # a compared row the recording judges after its last frame (the match's end)
+    for rj in judged_at.get(len(judge), ()):
+        if last is not None:
+            view[rj] = seen(last)
     worker.request({"op": "close", "arena": arena})
     return view
 

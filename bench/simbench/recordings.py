@@ -94,7 +94,7 @@ def run(names, setup_env, levels, limit, jobs, out_dir, emit):
                         J = len(rec["truth_phase"])
                         fview = np.zeros((len(rec["float_frame"]), int(rec["meta"]["cars"]) + 1, 19), np.float32) if floats else None
                         if harness_flow:
-                            view = flow.run(w, rec, units, fview)
+                            view = flow.run(w, rec, units, fview, births=flow.birth(rec, setup_env.get("catsim_data")))
                             r = flow.score(rec, view)
                         else:
                             req, payload = game.pack(rec, lv, float_rows=floats)

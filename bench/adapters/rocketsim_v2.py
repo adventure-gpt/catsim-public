@@ -98,11 +98,12 @@ class RocketSimV2(Adapter):
                 s.last_controls = rs.CarControls(*[float(x) for x in held[:5]], held[5] > 0.5, held[6] > 0.5, held[7] > 0.5)
             car.set_state(s)
         b = st["ball"]
-        bs = arena["a"].ball.get_state()
-        bs.pos, bs.vel, bs.ang_vel = self._vec(b["pos"]), self._vec(b["vel"]), self._vec(b["ang_vel"])
-        if "fwd" in b:
-            bs.rot_mat = rs.RotMat(self._vec(b["fwd"]), self._vec(b["right"]), self._vec(b["up"]))
-        arena["a"].ball.set_state(bs)
+        if b is not None:               # a ball given as null stays as it is
+            bs = arena["a"].ball.get_state()
+            bs.pos, bs.vel, bs.ang_vel = self._vec(b["pos"]), self._vec(b["vel"]), self._vec(b["ang_vel"])
+            if "fwd" in b:
+                bs.rot_mat = rs.RotMat(self._vec(b["fwd"]), self._vec(b["right"]), self._vec(b["up"]))
+            arena["a"].ball.set_state(bs)
         if st.get("pads"):
             pads = arena["a"].get_boost_pads()
             for x, y, cd in st["pads"]:
