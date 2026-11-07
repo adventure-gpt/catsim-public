@@ -1051,38 +1051,41 @@ def _body_html(md: str) -> str:
 
 
 PAGE_CSS = """
+/* Dark unless the system asks for light; the checkbox flips whichever applies. No script. */
 :root {
+  --bg: #15171a; --surface: #1c1f23; --ink: #e7e8ea; --muted: #a0a5ad; --faint: #6f757e;
+  --line: #2d3137; --head: #23272c; --exact: #173323; --exact-ink: #8fd3a6; --near: #1f2a20;
+  --gap: #2e281d; --na: #202327; --bar: #7f9fd1; --bar2: #4b638a; --accent: #9db8e6;
+}
+@media (prefers-color-scheme: light) {
+  :root {
   --bg: #fbfbfa; --surface: #ffffff; --ink: #1d1f22; --muted: #6b7078; --faint: #9aa0a8;
   --line: #e6e7e9; --head: #f3f4f5; --exact: #e7f4ec; --exact-ink: #1f6b3a; --near: #f1f6ee;
   --gap: #fbf3e6; --na: #f6f6f7; --bar: #5b7fb8; --bar2: #9db3d6; --accent: #3a5a8c;
-}
-/* Theme without scripts: the checkbox flips the system's choice (light by default, dark when the system is dark). */
-:root:has(#dm:checked) {
-  --bg: #15171a; --surface: #1c1f23; --ink: #e7e8ea; --muted: #a0a5ad; --faint: #6f757e;
-  --line: #2d3137; --head: #23272c; --exact: #173323; --exact-ink: #8fd3a6; --near: #1f2a20;
-  --gap: #2e281d; --na: #202327; --bar: #7f9fd1; --bar2: #4b638a; --accent: #9db8e6;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not(:has(#dm:checked)) {
-  --bg: #15171a; --surface: #1c1f23; --ink: #e7e8ea; --muted: #a0a5ad; --faint: #6f757e;
-  --line: #2d3137; --head: #23272c; --exact: #173323; --exact-ink: #8fd3a6; --near: #1f2a20;
-  --gap: #2e281d; --na: #202327; --bar: #7f9fd1; --bar2: #4b638a; --accent: #9db8e6;
   }
-  :root:has(#dm:checked) {
+}
+:root:has(#dm:checked) {
   --bg: #fbfbfa; --surface: #ffffff; --ink: #1d1f22; --muted: #6b7078; --faint: #9aa0a8;
   --line: #e6e7e9; --head: #f3f4f5; --exact: #e7f4ec; --exact-ink: #1f6b3a; --near: #f1f6ee;
   --gap: #fbf3e6; --na: #f6f6f7; --bar: #5b7fb8; --bar2: #9db3d6; --accent: #3a5a8c;
+}
+@media (prefers-color-scheme: light) {
+  :root:has(#dm:checked) {
+  --bg: #15171a; --surface: #1c1f23; --ink: #e7e8ea; --muted: #a0a5ad; --faint: #6f757e;
+  --line: #2d3137; --head: #23272c; --exact: #173323; --exact-ink: #8fd3a6; --near: #1f2a20;
+  --gap: #2e281d; --na: #202327; --bar: #7f9fd1; --bar2: #4b638a; --accent: #9db8e6;
   }
 }
 .theme input { position: absolute; opacity: 0; pointer-events: none; }
-.theme .to-light { display: none; }
-:root:has(#dm:checked) .theme .to-dark { display: none; }
-:root:has(#dm:checked) .theme .to-light { display: inline; }
-@media (prefers-color-scheme: dark) {
-  :root:not(:has(#dm:checked)) .theme .to-dark { display: none; }
-  :root:not(:has(#dm:checked)) .theme .to-light { display: inline; }
-  :root:has(#dm:checked) .theme .to-dark { display: inline; }
-  :root:has(#dm:checked) .theme .to-light { display: none; }
+/* the label names the other mode: "Light mode" on a dark page, "Dark mode" on a light one */
+.theme .to-dark { display: none; }
+:root:has(#dm:checked) .theme .to-light { display: none; }
+:root:has(#dm:checked) .theme .to-dark { display: inline; }
+@media (prefers-color-scheme: light) {
+  .theme .to-light { display: none; }
+  .theme .to-dark { display: inline; }
+  :root:has(#dm:checked) .theme .to-light { display: inline; }
+  :root:has(#dm:checked) .theme .to-dark { display: none; }
 }
 * { box-sizing: border-box; }
 .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
