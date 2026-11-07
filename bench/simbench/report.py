@@ -950,11 +950,12 @@ def model(recs) -> dict:
                 cells[(lv, s)] = {"v": pct2(a["exact_body_ticks"], allx), "s": small, "cls": cls}
     if flow_who:
         names = ", ".join(flow_who[:-1]) + (" and " if len(flow_who) > 1 else "") + flow_who[-1]
-        notes.append(f"Whole games for {names}: the harness supplies the match flow each lacks (kickoff starts and the "
+        one = len(flow_who) == 1
+        notes.append(f"Whole games for {names}: the harness supplies the match flow {'it' if one else 'each'} lacks (kickoff starts and the "
                      "countdown hold, restarts after goals, respawn spots; each kickoff and respawn puts a new car there "
                      "with the game's spawn boost, 33.3; at float precision the bodies are set to the game's own floats "
-                     "at the first float row and at each later kickoff's start). Each runs its own physics, pads, boost "
-                     "and demolitions; scored on bodies only.")
+                     f"at the first float row and at each later kickoff's start). {'It' if one else 'Each'} runs its own "
+                     "physics, pads, boost and demolitions; scored on bodies only.")
     seg_bt = max((r["summary"]["all"]["body_ticks"] for k, r in acc.items() if k[1] in ("A", "B", "Bp") and r.get("status") == "ok"), default=0)
     return {"cols": cols, "levels": levels, "cells": cells, "counts": counts, "notes": list(dict.fromkeys(notes)), "seg_bt": seg_bt}
 
