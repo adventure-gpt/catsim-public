@@ -877,6 +877,9 @@ def pct2(x: float, all_exact: bool) -> str:
     return f"{x:.4f}%" if x >= 99.9 else f"{x:.2f}%"
 
 
+SUITE_README = "https://github.com/thecosmicskye/RocketGPU-fullstate-suite#readme"
+
+
 def whole_line(sm: dict, r: dict, floats: bool) -> str:
     """The small line under a whole-games cell."""
     ex, n = sm["exact_to_the_end"], sm["recordings"]
@@ -950,6 +953,14 @@ def model(recs) -> dict:
                         small += f" ({a['failed_segments']:,} segments it couldn't run)"
                 cls = "exact" if allx else "near" if a["exact_body_ticks"] >= 99.0 else ""
                 cells[(lv, s)] = {"v": pct2(a["exact_body_ticks"], allx), "s": small, "cls": cls}
+                if lv == "A" and s == "rocketgpu" and a["recordings"] < recs_most and allx:
+                    # measured on part of the suite; the suite's own README publishes the whole of it
+                    sp = sorted(k for k in r["summary"] if k != "all")
+                    cells[(lv, s)]["s"] = (f"of body-ticks exact, measured on the {' and '.join(sp)} split "
+                                           f"({a['recordings']} of {recs_most} recordings)")
+                    cells[(lv, s)]["link"] = (f"100% on all {recs_most} per the suite's own published result", SUITE_README)
+                    notes.append("The suite's published result for RocketGPU (CUDA) is on its commit 15484501; our measured "
+                                 "split is on the commit named under its adapter.")
     if flow_who:
         names = ", ".join(flow_who[:-1]) + (" and " if len(flow_who) > 1 else "") + flow_who[-1]
         one = len(flow_who) == 1
@@ -1084,7 +1095,8 @@ def md_accuracy(m) -> list[str]:
             row = []
             for s in m["cols"]:
                 c = m["cells"][(lv, s)]
-                row.append(f"**{c['v']}** {c['s']}".strip() if c["cls"] != "pend" else f"*{c['v']}*")
+                more = f"; [{c['link'][0]}]({c['link'][1]})" if c.get("link") else ""
+                row.append(f"**{c['v']}** {c['s']}{more}".strip() if c["cls"] != "pend" else f"*{c['v']}*")
             out.append(f"| {lab}<br><sub>{desc_of(lv, m)}</sub> | " + " | ".join(row) + " |")
         out.append("")
     out += [f"- {n}" for n in m["notes"]] + ([""] if m["notes"] else [])
@@ -1169,6 +1181,7 @@ col.test { width: 300px; }
 td { min-width: 108px; }
 td .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 td .s { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; line-height: 1.35; }
+td .s a { color: var(--accent); }
 td.exact { background: var(--exact); } td.exact .v { color: var(--exact-ink); }
 td.near { background: var(--near); }
 td.na .v { color: var(--faint); font-weight: 500; font-size: 15px; }
@@ -1221,7 +1234,8 @@ def page_html(recs, sec, m) -> str:
             for s in cols:
                 c = m["cells"][(lv, s)]
                 cls = f' class="{c["cls"]}"' if c["cls"] else ""
-                h.append(f'<td{cls}><span class="v">{e(c["v"])}</span>' + (f'<span class="s">{e(c["s"])}</span>' if c["s"] else "") + "</td>")
+                more = f'; <a href="{c["link"][1]}">{e(c["link"][0])}</a>' if c.get("link") else ""
+                h.append(f'<td{cls}><span class="v">{e(c["v"])}</span>' + (f'<span class="s">{e(c["s"])}{more}</span>' if c["s"] else "") + "</td>")
             h.append("</tr>")
         h.append("</tbody></table></div>")
     if m["notes"]:
