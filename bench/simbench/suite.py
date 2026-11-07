@@ -29,6 +29,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .state import PRESETS as STATE_PRESETS
 from . import sims
 from .client import WorkerError
 from .state import packet_of
@@ -36,7 +37,9 @@ from .state import packet_of
 F32 = np.float32
 KS = (1, 30, 120)
 CAR_F = 61          # per car in a public row: preset, team, then RocketSim v3's 59 CarState numbers
-PRESETS = {"OCTANE": "Octane", "DOMINUS": "Dominus", "PLANK": "Plank", "BREAKOUT": "Breakout", "HYBRID": "Hybrid",
+# the suite's car names -> RocketSim's presets (each segment's public row also numbers its car's preset, in
+# simbench.state.PRESETS' order; that number wins)
+PRESETS = {"OCTANE": "Octane", "DOMINUS": "Dominus", "PLANK": "Plank", "BATMOBILE": "Plank", "BREAKOUT": "Breakout", "HYBRID": "Hybrid",
            "MERC": "Merc", "PSYCLOPS": "Psyclops"}
 LEVEL_NAME = {"A": "full", "B": "v3", "Bp": "packet"}
 
@@ -184,6 +187,9 @@ def score_recording(holder, path: Path, level: str, units: str) -> dict:
         cars = []
         for k, (_, args, _kw) in enumerate(log):
             c = dict(cars_spec[k] if k < len(cars_spec) else cars_spec[-1])
+            idx = int(pub[n][k * CAR_F]) if k * CAR_F < len(pub[n]) else -1
+            if 0 <= idx < len(STATE_PRESETS):
+                c["preset"] = STATE_PRESETS[idx]
             c["team"] = int(args[0]["value"])
             c["config"] = {key: v for key, v in args[1].items() if not key.startswith("__")}
             cars.append(c)
