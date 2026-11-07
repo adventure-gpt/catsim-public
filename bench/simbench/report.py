@@ -877,9 +877,6 @@ def pct2(x: float, all_exact: bool) -> str:
     return f"{x:.4f}%" if x >= 99.9 else f"{x:.2f}%"
 
 
-SUITE_README = "https://github.com/thecosmicskye/RocketGPU-fullstate-suite#readme"
-
-
 def whole_line(sm: dict, r: dict, floats: bool) -> str:
     """The small line under a whole-games cell."""
     ex, n = sm["exact_to_the_end"], sm["recordings"]
@@ -957,8 +954,8 @@ def model(recs) -> dict:
                     # measured on part of the suite; the suite's own README publishes the whole of it
                     sp = sorted(k for k in r["summary"] if k != "all")
                     cells[(lv, s)]["s"] = (f"of body-ticks exact, measured on the {' and '.join(sp)} split "
-                                           f"({a['recordings']} of {recs_most} recordings)")
-                    cells[(lv, s)]["link"] = (f"100% on all {recs_most} per the suite's own published result", SUITE_README)
+                                           f"({a['recordings']} of {recs_most} recordings); 100% on all {recs_most} per the "
+                                           "suite's own published result")
                     notes.append("The suite's published result for RocketGPU (CUDA) is on its commit 15484501; our measured "
                                  "split is on the commit named under its adapter.")
     if flow_who:
@@ -993,7 +990,8 @@ def model(recs) -> dict:
         if r.get("status") == "ok" and r.get("machine") and r["machine"]["cpu"] != speed_cpu and lv in ROWS:
             places.setdefault(short_machine(r["machine"]), {}).setdefault(lv, set()).add(COL_NAMES.get(sim, nice(sim)))
     for where, rows in places.items():
-        bits = [f"{ROWS[lv][0][0].lower()}{ROWS[lv][0][1:]}: {', '.join(sorted(rows[lv]))}" for lv in levels if lv in rows]
+        low = lambda t: t if t.startswith("RocketSim") else t[0].lower() + t[1:]      # (a name keeps its capital)
+        bits = [f"{low(ROWS[lv][0])}: {', '.join(sorted(rows[lv]))}" for lv in levels if lv in rows]
         notes.append(f"Accuracy compares bits, so a row doesn't depend on its machine. These ran on {where}, every other row on the "
                      f"machine named above: " + "; ".join(bits) + ".")
     seg_bt = max((r["summary"]["all"]["body_ticks"] for k, r in acc.items() if k[1] in ("A", "B", "Bp") and r.get("status") == "ok"), default=0)
@@ -1067,8 +1065,10 @@ def subtitle(recs) -> str:
     if speed and len({short_machine(x) for x in ms}) > 1:
         when = max((r.get("when", "")[:10] for r in recs), default="")
         with_card = next((x for x in speed if x.get("gpus")), speed[0])
-        return (f"The same tests for every simulator, on one machine ({short_machine(with_card)}"
-                + (f", {when}" if when else "") + ") but for the accuracy rows the notes name.")
+        cpu = re.sub(r"\(R\)|\(TM\)|CPU|@.*|\d+th Gen ", "", with_card["cpu"]).strip()
+        gpu = next((g.split(",")[0].replace("NVIDIA GeForce ", "") for g in (with_card.get("gpus") or [])), None)
+        return (f"The same tests for every simulator. Speed: {cpu} ({with_card['threads']} threads)" + (f", {gpu}" if gpu else "")
+                + ". Accuracy compares bits, so some rows ran on a second machine; the notes name them.")
     m = Counter(json.dumps(x, sort_keys=True) for x in ms).most_common(1)[0][0]
     m = json.loads(m)
     cpu = re.sub(r"\(R\)|\(TM\)|CPU|@.*|11th Gen ", "", m["cpu"]).strip()
@@ -1095,8 +1095,7 @@ def md_accuracy(m) -> list[str]:
             row = []
             for s in m["cols"]:
                 c = m["cells"][(lv, s)]
-                more = f"; [{c['link'][0]}]({c['link'][1]})" if c.get("link") else ""
-                row.append(f"**{c['v']}** {c['s']}{more}".strip() if c["cls"] != "pend" else f"*{c['v']}*")
+                row.append(f"**{c['v']}** {c['s']}".strip() if c["cls"] != "pend" else f"*{c['v']}*")
             out.append(f"| {lab}<br><sub>{desc_of(lv, m)}</sub> | " + " | ".join(row) + " |")
         out.append("")
     out += [f"- {n}" for n in m["notes"]] + ([""] if m["notes"] else [])
@@ -1181,7 +1180,6 @@ col.test { width: 300px; }
 td { min-width: 108px; }
 td .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 td .s { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; line-height: 1.35; }
-td .s a { color: var(--accent); }
 td.exact { background: var(--exact); } td.exact .v { color: var(--exact-ink); }
 td.near { background: var(--near); }
 td.na .v { color: var(--faint); font-weight: 500; font-size: 15px; }
@@ -1234,8 +1232,7 @@ def page_html(recs, sec, m) -> str:
             for s in cols:
                 c = m["cells"][(lv, s)]
                 cls = f' class="{c["cls"]}"' if c["cls"] else ""
-                more = f'; <a href="{c["link"][1]}">{e(c["link"][0])}</a>' if c.get("link") else ""
-                h.append(f'<td{cls}><span class="v">{e(c["v"])}</span>' + (f'<span class="s">{e(c["s"])}{more}</span>' if c["s"] else "") + "</td>")
+                h.append(f'<td{cls}><span class="v">{e(c["v"])}</span>' + (f'<span class="s">{e(c["s"])}</span>' if c["s"] else "") + "</td>")
             h.append("</tr>")
         h.append("</tbody></table></div>")
     if m["notes"]:
