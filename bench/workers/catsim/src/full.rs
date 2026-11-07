@@ -1,10 +1,11 @@
 //! Level A for catSim: the full-state suite's start state (its `s.*` arrays, RocketGPU's field layout) mapped into
-//! catSim's arena. docs/BENCHMARKS.md lists every field: what it becomes here, and what can't be set (the contact
-//! manifolds' cached points and the broadphase's pair order; catSim makes those at the first tick).
+//! catSim's arena, the contact memory included (the broadphase's pair order, the manifolds' order and their cached
+//! points, translated from RocketGPU's layout into catSim's, `Full::contacts`). docs/BENCHMARKS.md lists every field.
 
 use catsim::bt::{ACTIVE, ISLAND_SLEEPING};
 use catsim::game::arena::{Actor, Arena, Phase, SPAWN_ACTOR_Z};
-use catsim::game::hidden::{BodyState, CarHidden};
+use catsim::game::contacts::{BodyRef, Contacts, Manifold, ManifoldOwner, Pair};
+use catsim::game::hidden::{BodyState, CarHidden, WheelGround};
 use catsim::game::round::{CountdownClock, FrameTimer};
 use catsim::math::rot::Rotator;
 use catsim::math::{Mat3, Vec3, v3};
@@ -101,6 +102,7 @@ impl<'a> Full<'a> {
         a.physics_frame = phys as i32;
         let ids: Vec<u64> = req.get("ids").and_then(Value::as_array).map(|v| v.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
         let demoed: Vec<bool> = (0..nc).map(|k| self.u8("car_states.is_demoed", k) != 0).collect();
+        let mut grounds = Vec::new();
         for k in 0..nc {
             if demoed[k] {
                 continue;
@@ -130,6 +132,7 @@ impl<'a> Full<'a> {
             let mut h = a.car_hidden(k).ok_or("car has no body")?;
             self.car_hidden(a, k, &mut h, phys, &ids);
             a.set_car_hidden(k, &h);
+            grounds.push(k);
             a.players[k].last_wheels_hit_ball_time = -1000.0;
         }
         // the ball
@@ -142,7 +145,7 @@ impl<'a> Full<'a> {
         let resting = (bp[2] * 50.0 - 92.75).abs() < 0.01;
         let still = bv.iter().all(|&x| x == 0.0) && self.whole_f("ball_states.ang_vel").iter().all(|&x| x == 0.0);
         let dt_used = if resting || !still { dtime } else { 0.0 };
-        let sleeping = asleep && dt_used <= 0.0;
+        let sleeping = if std::env::var_os("SIMBENCH_OLD_SLEEP").is_some() { asleep && dt_used <= 0.0 } else { asleep };
         let ball = BodyState {
             origin: Self::vec(&bp, 0),
             basis: Self::basis(&self.whole_f("ball_states.basis_forward"), &self.whole_f("ball_states.basis_right"), &self.whole_f("ball_states.basis_up")),
@@ -160,6 +163,49 @@ impl<'a> Full<'a> {
             }
         }
         a.ball_held_2d = (self.whole_u("ball_states.constrained_2d") & 0xffff) != 0;
+        // what each touching wheel stands on (the arena, a car or the ball). `set_wheel_normals_mask` marks the wheels
+        // whose contact is the game's world contact (bit 5: as recorded); a touching wheel it leaves out stands on a car
+        // or the ball, which catSim's own wheel ray in the start state tells apart (else the nearer of the two)
+        for k in grounds {
+            let Some(mut h) = a.car_hidden(k) else { continue };
+            let Some(c) = a.players[k].car.as_ref() else { continue };
+            let mut v = c.vehicle.clone();
+            catsim::bt::vehicle::update_rays_and_contacts(&mut v, &mut a.world.cw);
+            let mask = self.u8("car_states.set_wheel_normals_mask", k);
+            let recorded = mask >> 5 & 1 != 0;
+            let ball_at = a.ball.as_ref().map(|b| a.world.cw.bodies[b.body.0 as usize].transform.origin);
+            let mut changed = false;
+            for w in 0..4 {
+                if !h.wheels[w].contact {
+                    continue;
+                }
+                let ray = match v.wheels[w].ground.and_then(|id| a.body_ref(id)) {
+                    Some(BodyRef::Car(_)) => Some(WheelGround::Car),
+                    Some(BodyRef::Ball) => Some(WheelGround::Ball),
+                    Some(BodyRef::World(_)) => Some(WheelGround::Arena),
+                    None => None,
+                };
+                let g = if !recorded {
+                    ray.unwrap_or(WheelGround::Arena)
+                } else if mask >> SUITE_WHEEL[w] & 1 != 0 {
+                    WheelGround::Arena
+                } else {
+                    match ray {
+                        Some(g @ (WheelGround::Car | WheelGround::Ball)) => g,
+                        _ => {
+                            let hp = v.wheels[w].hard_point;
+                            let near_ball = ball_at.is_some_and(|b| ((hp.x - b.x).powi(2) + (hp.y - b.y).powi(2) + (hp.z - b.z).powi(2)).sqrt() < 1.825 + 0.6 + 2.0);
+                            if near_ball { WheelGround::Ball } else { WheelGround::Car }
+                        }
+                    }
+                };
+                changed |= g != h.wheels[w].ground;
+                h.wheels[w].ground = g;
+            }
+            if changed {
+                a.set_car_hidden(k, &h);
+            }
+        }
         // the broadphase boxes as the game's last bounds update left them (its predictive contacts read them first)
         let boxes = self.whole_f("solver_scratch.bp.sweep.sap_body_aabb");
         let valid = self.whole_u("solver_scratch.bp.sweep.sap_body_aabb_valid") & 0xffff;
@@ -214,6 +260,11 @@ impl<'a> Full<'a> {
                 }
             }
         }
+        // the contact memory, in catSim's layout
+        if std::env::var_os("SIMBENCH_CATSIM_NO_CONTACTS").is_none() {
+            let c = self.contacts(a, nc, &demoed)?;
+            a.set_contacts(&c)?;
+        }
         // respawn spots for the demolished cars, from the recording (the suite hands its simulators these choices)
         if let Some(sp) = req["start"].get("respawn_spots").and_then(Value::as_array) {
             for (k, s) in sp.iter().enumerate() {
@@ -224,6 +275,192 @@ impl<'a> Full<'a> {
             }
         }
         Ok(())
+    }
+
+    fn u32s(&self, name: &str) -> Vec<u32> {
+        self.raw(name).chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+    }
+
+    /// RocketGPU's pair and manifold keys (a kind, two bodies, a static id) and its manifolds' points, in catSim's
+    /// terms. Bodies in a key: 0 the ball, k + 1 car k; a static id names an arena part through the broadphase handle it
+    /// holds (`sap_static_id`; the handles are catSim's too: planes 1-6, meshes 7-22); static id 99 marks a predictive
+    /// contact. The pairs keep catSim's own static-static pairs (made with the arena, always first), then the state's.
+    fn contacts(&self, a: &Arena, nc: usize, demoed: &[bool]) -> Result<Contacts, String> {
+        let now = a.contacts()?;
+        let parts = a.world_parts();
+        let statics = self.raw("solver_scratch.bp.sweep.sap_static_id");
+        let static_of = |id: i16| -> Option<BodyRef> {
+            let h = statics.chunks_exact(2).position(|c| i16::from_le_bytes([c[0], c[1]]) == id)?;
+            parts.iter().position(|p| p.handle as usize == h).map(BodyRef::World)
+        };
+        let car = |raw: u32| -> Option<BodyRef> {
+            let k = raw as usize;
+            (k >= 1 && k <= nc && !demoed[k - 1]).then(|| BodyRef::Car(k - 1))
+        };
+        // (body0, body1, child) of a key's manifold, oriented as catSim's algorithms make it
+        let decode = |key: u32| -> Option<(BodyRef, BodyRef, (i32, i32))> {
+            let (kind, ra, rb, sid) = (key & 3, (key >> 2) & 15, (key >> 6) & 15, (key >> 16) as u16 as i16);
+            match kind {
+                0 => Some((BodyRef::Ball, static_of(sid)?, (-1, -1))),
+                1 => Some((car(ra)?, BodyRef::Ball, (0, -1))),
+                2 => Some((car(ra)?, static_of(sid)?, (0, -1))),
+                _ => {
+                    let (x, y) = (car(ra)?, car(rb)?);
+                    let (hx, hy) = (a.broadphase_handle(x)?, a.broadphase_handle(y)?);
+                    Some(if hx < hy { (x, y, (0, 0)) } else { (y, x, (0, 0)) })
+                }
+            }
+        };
+        let mut pairs: Vec<Pair> = now.pairs.iter().copied().filter(|p| matches!((p.body0, p.body1), (BodyRef::World(_), BodyRef::World(_)))).collect();
+        let np = self.whole_u("solver_scratch.bp.bp_pair_count") as u8 as usize;
+        let keys = self.u32s("solver_scratch.bp.bp_pairs");
+        let mut pair_of_key = std::collections::HashMap::new();
+        for &k in keys.iter().take(np) {
+            let Some((x, y, _)) = decode(k) else { continue };
+            pair_of_key.insert(k, pairs.len());
+            pairs.push(Pair { body0: x, body1: y, dispatched: false });
+        }
+        // a pair catSim's broadphase holds and the state lacks stays, after the state's (its boxes overlap in catSim)
+        let same = |p: &Pair, q: &Pair| (p.body0, p.body1) == (q.body0, q.body1) || (p.body0, p.body1) == (q.body1, q.body0);
+        for p in &now.pairs {
+            if !pairs.iter().any(|q| same(p, q)) {
+                pairs.push(Pair { dispatched: false, ..*p });
+            }
+        }
+        let npred = self.whole_u("solver_scratch.bp.bp_predictive_count") as u8 as usize;
+        let pred = self.u32s("solver_scratch.bp.bp_predictive");
+        let nm = self.whole_u("solver_scratch.bp.bp_manifold_count") as u8 as usize;
+        let mut manifolds = Vec::new();
+        let mut used_pred = vec![false; npred];
+        for &key in self.u32s("solver_scratch.bp.bp_manifolds").iter().take(nm) {
+            if (key >> 16) as u16 == 99 {
+                let Some(k) = (0..npred.min(pred.len())).find(|&k| pred[k] == key && !used_pred[k]) else { continue };
+                let body = match key & 3 {
+                    0 | 1 => Some(BodyRef::Ball),
+                    _ => car((key >> 2) & 15),
+                };
+                let Some(body) = body else { continue };
+                used_pred[k] = true;
+                manifolds.push(Manifold { owner: ManifoldOwner::Predictive(k), body0: body, body1: BodyRef::World(0), points: Vec::new() });
+                continue;
+            }
+            let (Some(&pair), Some((b0, b1, child))) = (pair_of_key.get(&key), decode(key)) else { continue };
+            let points = self.points(a, key, b0, b1);
+            manifolds.push(Manifold { owner: ManifoldOwner::Pair { pair, child }, body0: b0, body1: b1, points });
+        }
+        // the predictive contacts are numbered in the state's order; one that didn't map leaves no gap
+        let mut remap = vec![usize::MAX; npred];
+        let mut n = 0;
+        for (k, u) in used_pred.iter().enumerate() {
+            if *u {
+                remap[k] = n;
+                n += 1;
+            }
+        }
+        for m in manifolds.iter_mut() {
+            if let ManifoldOwner::Predictive(k) = m.owner {
+                m.owner = ManifoldOwner::Predictive(remap[k]);
+            }
+        }
+        Ok(Contacts { boxes: now.boxes, pairs, manifolds })
+    }
+
+    /// One manifold's cached points from RocketGPU's per-kind storage.
+    fn points(&self, a: &Arena, key: u32, b0: BodyRef, b1: BodyRef) -> Vec<catsim::bt::ManifoldPoint> {
+        let (kind, ra, rb, sid) = (key & 3, ((key >> 2) & 15) as usize, ((key >> 6) & 15) as usize, (key >> 16) as u16 as i16);
+        let mut out = Vec::new();
+        let body = |r: BodyRef| a.body_id(r).map(|id| a.world.cw.bodies[id.0 as usize].transform);
+        let (Some(t0), Some(t1)) = (body(b0), body(b1)) else { return out };
+        let mut push = |la: Vec3, lb: Vec3, n: Vec3, d: f32| {
+            if let Some(p) = a.contact_point(b0, b1, la, lb, n, d) {
+                out.push(p);
+            }
+        };
+        let fv = |name: &str| self.whole_f(name);
+        let cnt_of = |name: &str, slot: usize| self.raw(name).get(slot).copied().unwrap_or(0) as usize;
+        let at = |v: &[f32], i: usize| v3(v[3 * i], v[3 * i + 1], v[3 * i + 2]);
+        match kind {
+            // the ball and a plane or a mesh: the points' A is on the ball, B on the arena part
+            0 => {
+                let (pre, slot) = if sid >= 100 {
+                    ("solver_scratch.ball_world_plane_manifolds", [0usize, 1, 3, 2, 4, 5].get((sid - 100) as usize).copied())
+                } else {
+                    ("solver_scratch.ball_world_mesh_manifolds", Some(sid as usize))
+                };
+                let Some(slot) = slot else { return out };
+                let cnt = cnt_of(&format!("{pre}.count"), slot);
+                let (la, lb, nn, d) = (fv(&format!("{pre}.points.local_point_a_bt")), fv(&format!("{pre}.points.local_point_b_bt")), fv(&format!("{pre}.points.normal")), fv(&format!("{pre}.points.distance_bt")));
+                for i in 0..cnt.min(4) {
+                    let q = slot * 4 + i;
+                    if 3 * q + 2 < la.len() && q < d.len() {
+                        push(at(&la, q), at(&lb, q), at(&nn, q), d[q]);
+                    }
+                }
+            }
+            // a car and the ball, or two cars: A and B as the state stores them, matched to catSim's body0 and body1 by
+            // where A's local point lands (pos_a_bt is A's point in the world)
+            1 | 3 => {
+                let (pre, slot) = if kind == 1 {
+                    ("ball_car", ra - 1)
+                } else {
+                    let (lo, hi) = ((ra - 1).min(rb - 1), (ra - 1).max(rb - 1));
+                    ("car_car", hi * (hi.max(1) - 1) / 2 + lo)
+                };
+                let cnt = cnt_of(&format!("{pre}.count"), slot);
+                let (la, lb, nn, d, pa) = (fv(&format!("{pre}.points.local_a_bt")), fv(&format!("{pre}.points.local_b_bt")), fv(&format!("{pre}.points.normal")), fv(&format!("{pre}.points.distance_bt")), fv(&format!("{pre}.points.pos_a_bt")));
+                for i in 0..cnt.min(4) {
+                    let q = slot * 4 + i;
+                    if 3 * q + 2 >= la.len() || 3 * q + 2 >= pa.len() || q >= d.len() {
+                        continue;
+                    }
+                    let (x, y, n, p) = (at(&la, q), at(&lb, q), at(&nn, q), at(&pa, q));
+                    let gap = |t: &catsim::math::Transform, l: Vec3| {
+                        let r = &t.basis.r;
+                        let w = v3(r[0].x * l.x + r[0].y * l.y + r[0].z * l.z + t.origin.x, r[1].x * l.x + r[1].y * l.y + r[1].z * l.z + t.origin.y, r[2].x * l.x + r[2].y * l.y + r[2].z * l.z + t.origin.z);
+                        (w.x - p.x).powi(2) + (w.y - p.y).powi(2) + (w.z - p.z).powi(2)
+                    };
+                    if gap(&t0, x) <= gap(&t1, x) {
+                        push(x, y, n, d[q]);
+                    } else {
+                        push(y, x, v3(-n.x, -n.y, -n.z), d[q]);
+                    }
+                }
+            }
+            // a car and an arena part
+            _ => {
+                let c = ra - 1;
+                if sid >= 100 {
+                    let slot = c * 6 + (sid - 100) as usize;
+                    let cnt = cnt_of("car_world_plane.count", slot);
+                    let (la, pb, d) = (fv("car_world_plane.points.local_point_a_bt"), fv("car_world_plane.points.point_on_b_bt"), fv("car_world_plane.points.distance_bt"));
+                    let r = &t1.basis.r;
+                    // the plane's normal, and the world point in the plane's frame, as catSim's convex-plane contact makes them
+                    let n = v3(r[0].y * 0.0 + r[0].x * 0.0 + r[0].z, r[1].y * 0.0 + r[1].x * 0.0 + r[1].z, r[2].y * 0.0 + r[2].x * 0.0 + r[2].z);
+                    for i in 0..cnt.min(4) {
+                        let q = slot * 4 + i;
+                        if 3 * q + 2 >= la.len() || 3 * q + 2 >= pb.len() || q >= d.len() {
+                            continue;
+                        }
+                        let w = at(&pb, q);
+                        let (dx, dy, dz) = (w.x - t1.origin.x, w.y - t1.origin.y, w.z - t1.origin.z);
+                        let lb = v3(dy * r[1].x + dx * r[0].x + dz * r[2].x, dy * r[1].y + dx * r[0].y + dz * r[2].y, dx * r[0].z + dy * r[1].z + dz * r[2].z);
+                        push(at(&la, q), lb, n, d[q]);
+                    }
+                } else {
+                    let cnts = self.raw("car_world_mesh.count");
+                    let mesh = self.raw("car_world_mesh.mesh");
+                    let Some(slot) = (c * 2..c * 2 + 2).find(|&j| cnts.get(j).copied().unwrap_or(0) > 0 && mesh.get(j).copied() == Some(sid as u8)) else { return out };
+                    let (la, lb, nn, d) = (fv("car_world_mesh.points.local_point_a_bt"), fv("car_world_mesh.points.local_point_b_bt"), fv("car_world_mesh.points.normal"), fv("car_world_mesh.points.distance_bt"));
+                    for i in 0..(cnts[slot] as usize).min(4) {
+                        let q = slot * 4 + i;
+                        if 3 * q + 2 < la.len() && q < d.len() {
+                            push(at(&la, q), at(&lb, q), at(&nn, q), d[q]);
+                        }
+                    }
+                }
+            }
+        }
+        out
     }
 
     fn car_hidden(&self, a: &Arena, k: usize, h: &mut CarHidden, phys: i64, ids: &[u64]) {
@@ -287,7 +524,8 @@ impl<'a> Full<'a> {
         if cd > 0.0 {
             if let Some(v) = ids.iter().position(|&i| i == other) {
                 h.bump_victim = Some(v);
-                h.bump_time = (1.0 / 120.0) * phys as f32 - (0.25 - cd);
+                let ticks_ago = ((0.25 - cd) * 120.0).round() as i64;
+                h.bump_time = (1.0 / 120.0) * (phys - ticks_ago) as f32;
             }
         }
     }

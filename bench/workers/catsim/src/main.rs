@@ -11,7 +11,7 @@ use catsim::game::car::VehicleInputs;
 use catsim::game::config::{body_spawn, preset, Preset};
 use catsim::game::hidden::{BodyState, CarHidden};
 use catsim::game::pads::{PadLayout, Pad, NUM_PADS};
-use catsim::math::{Mat3, v3};
+use catsim::math::{Mat3, Vec3, v3};
 use serde_json::{Value, json};
 use simbench_kit::{BODY, CarSpec, Hello, Sim, TICK_CAR, b, f, has, serve};
 use std::path::PathBuf;
@@ -108,14 +108,18 @@ fn body_of(c: &Value, default_up: bool) -> BodyState {
 }
 
 impl Cat {
-    fn kickoff(a: &mut Arena, n: usize) {
-        // the game's kickoff has five spots a team; a bigger team (the suite's uneven matches) gets spots in a row
-        // instead (every car is moved to its start state next anyway)
+    /// The game's kickoff has five spots a team; a bigger team (the suite's uneven matches) gets spots in a row instead
+    /// (every car is moved to its start state next anyway).
+    fn spots_for_big_teams(a: &Arena) -> Option<Vec<(Vec3, catsim::math::rot::Rotator)>> {
         let big = (0..2).any(|t| a.players.iter().filter(|p| p.team == t).count() > 5);
-        let spots = big.then(|| (0..n).map(|i| {
+        big.then(|| (0..a.players.len()).map(|i| {
             let side = if a.players[i].team == 0 { -1.0 } else { 1.0 };
             (v3(-3000.0 + 750.0 * (i / 2) as f32, side * 4000.0, catsim::game::arena::SPAWN_ACTOR_Z), catsim::math::rot::Rotator::default())
-        }).collect());
+        }).collect())
+    }
+
+    fn kickoff(a: &mut Arena, n: usize) {
+        let spots = Self::spots_for_big_teams(a);
         a.start_at_drop(spots);
         for _ in 0..2 {
             a.frame(&vec![VehicleInputs::default(); n], 1);
@@ -354,7 +358,8 @@ impl Sim for Cat {
             // remake the bodies so the ball and the cars hold the state's broadphase handles, through the game's own restart
             let a = &mut ca.a;
             a.set_next_handles(&order);
-            a.start_like_restart(None, 0);
+            let spots = Self::spots_for_big_teams(a);
+            a.start_like_restart(spots, 0);
             a.phase = Phase::Active;
             a.countdown_clock = None;
             a.ball_held_2d = false;
