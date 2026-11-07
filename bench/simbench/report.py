@@ -951,11 +951,14 @@ def model(recs) -> dict:
     if flow_who:
         names = ", ".join(flow_who[:-1]) + (" and " if len(flow_who) > 1 else "") + flow_who[-1]
         one = len(flow_who) == 1
-        notes.append(f"Whole games for {names}: the harness supplies the match flow {'it' if one else 'each'} lacks (kickoff starts and the "
-                     "countdown hold, restarts after goals, respawn spots; each kickoff and respawn puts a new car there "
-                     "with the game's spawn boost, 33.3; at float precision the bodies are set to the game's own floats "
-                     f"at the first float row and at each later kickoff's start). {'It' if one else 'Each'} runs its own "
-                     "physics, pads, boost and demolitions; scored on bodies only.")
+        notes.append(f"Whole games for {names}: the harness supplies the match flow {'it' if one else 'each'} lacks. The "
+                     "first kickoff's cars are born as the game makes them (the recording's restart through catSim's "
+                     "spawn rules from the dump; the simulator runs the drop), each later kickoff starts where the "
+                     "packet shows it, and the harness holds the cars through each countdown, restarts after goals and "
+                     "puts respawned cars on the recording's spots. Each kickoff and respawn puts a new car there with "
+                     "the game's spawn boost, 33.3. At float precision the bodies are set to the game's own floats at the "
+                     f"first float row and at each later kickoff's start. {'It' if one else 'Each'} runs its own physics, "
+                     "pads, boost and demolitions; scored on bodies only.")
     seg_bt = max((r["summary"]["all"]["body_ticks"] for k, r in acc.items() if k[1] in ("A", "B", "Bp") and r.get("status") == "ok"), default=0)
     return {"cols": cols, "levels": levels, "cells": cells, "counts": counts, "notes": list(dict.fromkeys(notes)), "seg_bt": seg_bt}
 

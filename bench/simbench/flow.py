@@ -5,11 +5,16 @@ simulator whose adapter replays the round itself (the "game" request, simbench.g
 strict level C. Every other simulator gets this runner, through the requests every adapter has (new, set, step,
 bodies). The harness supplies the flow, each piece an assist named in the results:
 
-  - each kickoff: the cars and the ball are put where the recording has them at the countdown's first packet row (the
-    packet's own rounding; velocities as the packet shows them, the ball at rest), and the cars are held (may-drive off)
-    for as long as the recording's countdown lasts;
-  - after a goal, the next kickoff the same way, when the recording has it (the simulator's own goal, if it has one,
-    doesn't matter: the ball's rows during a goal's replay are not scored);
+  - the first kickoff: each car is born as the game makes it, from the recording's own restart (its spots, the ticks
+    the restart runs before the bodies are born, each car's birth delay) put through catSim's spawn rules from the
+    dump, the same placement catSim's own run uses: the body's words at birth, at rest, at the tick it is born; the
+    simulator runs the drop itself; a car shows in its birth frame's row as its spawn actor, as the game samples it.
+    The ball is held on its spot where the countdown's first packet row shows it. Without catSim's package and data, or
+    for a recording without its restart, the first kickoff starts like the later ones;
+  - each later kickoff: the cars and the ball are put where the recording has them at the countdown's first packet row
+    (the packet's own rounding; velocities as the packet shows them, the ball at rest), when the recording has it (the
+    simulator's own goal, if it has one, doesn't matter: the ball's rows during a goal's replay are not scored);
+  - every countdown: the cars are held (may-drive off) for as long as the recording's countdown lasts;
   - a respawn: the car is put where the recording's packet first shows it again;
   - a kickoff or a respawn puts a new car there (nothing carried over: jumps, flips, boosting, timers, wheel contacts)
     with the game's spawn boost (33.3; a packet shows 33.33);
@@ -55,11 +60,13 @@ FRESH_CAR = {"on_ground": False, "wheels_contact": [False] * 4, "has_jumped": Fa
              "time_since_boosted": 0.0, "boosting_time": 0.0, "auto_flip_timer": 0.0, "bump_cooldown_timer": 0.0,
              "demo_respawn_timer": 0.0}
 
-ASSISTS = ["the harness supplies only the match flow the simulator lacks: each kickoff's start (cars and ball where the "
-           "recording's countdown starts them, as its packet shows them: positions to 0.01 uu, velocities to 0.01 uu/s; at "
-           "float precision, the bodies then set to the game's own floats at the first float row and at each later kickoff's "
-           "start; a new car with the game's spawn boost, 33.3) and the hold through the countdown, the "
-           "restart after each goal when the recording has it, and each demolished car's respawn spot from the recording",
+ASSISTS = ["the harness supplies only the match flow the simulator lacks: the first kickoff's cars born as the game makes "
+           "them (the recording's restart through catSim's spawn rules from the dump: each body at birth, the ticks it is "
+           "born at; the simulator runs the drop) with the ball held on its spot; each later kickoff's start where the "
+           "recording's countdown starts it, as its packet shows it (positions to 0.01 uu, velocities to 0.01 uu/s); at "
+           "float precision, the bodies then set to the game's own floats at the first float row and at each later "
+           "kickoff's start; a new car with the game's spawn boost, 33.3; the hold through each countdown, the restart "
+           "after each goal when the recording has it, and each demolished car's respawn spot from the recording",
            "the simulator runs everything it models itself: physics, boost and pads, demolitions and their respawn timers, "
            "goals (its own goal, if it has one, changes nothing the harness does)",
            "each frame's physics ticks counted from the recording", "scored on bodies only (no boost or pads)"]
