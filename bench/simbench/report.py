@@ -899,6 +899,7 @@ def model(recs) -> dict:
     cols = COLS + [s for s in sim_sort({k[0] for k in acc}) if s not in COLS]
     levels = [lv for lv in ORDER_LEVELS if any(k[1] == lv for k in acc)]
     notes, cells, counts = [], {}, {}
+    flow_who = []                  # the simulators whose whole games ran on the harness's match flow
     for lv in levels:
         peers = [r for k, r in acc.items() if k[1] == lv and r.get("status") == "ok"]
         if lv in WHOLE:
@@ -927,12 +928,8 @@ def model(recs) -> dict:
                     small += f"; {n} of {counts[lv]} matches"
                 cls = "exact" if ex == n else "near" if n > 1 and ex == n - 1 else ""
                 cells[(lv, s)] = {"v": f"{ex} / {n}", "s": small, "cls": cls}
-                if sm.get("bodies_only"):
-                    notes.append(f"{who}'s whole games: the harness supplies the match flow it lacks (kickoff starts and the "
-                                 "countdown hold, restarts after goals, respawn spots; each kickoff and respawn puts a new car "
-                                 "there with the game's spawn boost, 33.3; at float precision the bodies are set to the game's "
-                                 "own floats at the first float row and at each later kickoff's start); it runs its own "
-                                 "physics, pads, boost and demolitions; scored on bodies only.")
+                if sm.get("bodies_only") and who not in flow_who:
+                    flow_who.append(who)
             elif lv == "rlpr":
                 a = r["results"]["segments_120"]["total"]
                 cells[(lv, s)] = {"v": f"{a['pass_pct']:.2f}%", "s": f"of car-ticks within tolerance; mean error {a['mean_norm']:.2f}", "cls": ""}
@@ -951,6 +948,13 @@ def model(recs) -> dict:
                     small += f"; scored on {a['body_ticks'] / 1e6:.1f}M of {most / 1e6:.1f}M body-ticks"
                 cls = "exact" if allx else "near" if a["exact_body_ticks"] >= 99.0 else ""
                 cells[(lv, s)] = {"v": pct2(a["exact_body_ticks"], allx), "s": small, "cls": cls}
+    if flow_who:
+        names = ", ".join(flow_who[:-1]) + (" and " if len(flow_who) > 1 else "") + flow_who[-1]
+        notes.append(f"Whole games for {names}: the harness supplies the match flow each lacks (kickoff starts and the "
+                     "countdown hold, restarts after goals, respawn spots; each kickoff and respawn puts a new car there "
+                     "with the game's spawn boost, 33.3; at float precision the bodies are set to the game's own floats "
+                     "at the first float row and at each later kickoff's start). Each runs its own physics, pads, boost "
+                     "and demolitions; scored on bodies only.")
     seg_bt = max((r["summary"]["all"]["body_ticks"] for k, r in acc.items() if k[1] in ("A", "B", "Bp") and r.get("status") == "ok"), default=0)
     return {"cols": cols, "levels": levels, "cells": cells, "counts": counts, "notes": list(dict.fromkeys(notes)), "seg_bt": seg_bt}
 
