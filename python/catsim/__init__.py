@@ -19,7 +19,8 @@ from enum import IntEnum
 from pathlib import Path
 
 __all__ = ["init", "Arena", "Ball", "Car", "CarConfig", "CarControls", "CarState", "BallState", "BoostPad",
-           "BoostPadState", "GameMode", "Team", "Vec", "RotMat", "Angle", "Loadout", "__version__"]
+           "BoostPadState", "GameMode", "Team", "Vec", "RotMat", "Angle", "Loadout", "CarHidden", "Clock", "WheelContact",
+           "BodyState", "RoundState", "__version__"]
 __version__ = "0.1.2"
 
 _lib_mod = None
@@ -168,6 +169,117 @@ class CarControls:
                 1.0 if self.jump else 0.0, 1.0 if self.boost else 0.0, 1.0 if self.handbrake else 0.0]
 
 
+# ---------------------------------------------------------------- hidden state (what a packet doesn't show)
+
+@dataclass
+class Clock:
+    """A game component (jump, dodge, boost, ...): on or off, and the seconds since it last changed."""
+    active: bool = False
+    time: float = 0.0
+
+
+@dataclass
+class WheelContact:
+    contact: bool = False
+    normal: Vec = field(default_factory=lambda: Vec(0, 0, 1))
+
+
+@dataclass
+class CarHidden:
+    """Everything about a car beyond its body that the next ticks read: the game's flags, its components' clocks, the
+    input it holds, its wheels' contacts and its hit gates. `Car.get_hidden()` / `set_hidden()`; docs/API.md says what
+    each field is and how RocketSim v3's `CarState` fields map onto them. Times in seconds; frames are physics frames
+    (`Arena.physics_frame`)."""
+    driving: bool = True
+    on_ground: bool = True
+    jumped: bool = False
+    double_jumped: bool = False
+    supersonic: bool = False
+    supersonic_time: float = 0.0
+    jump: Clock = field(default_factory=Clock)
+    jump_released: bool = False
+    double_jump: Clock = field(default_factory=Clock)
+    dodge: Clock = field(default_factory=Clock)
+    dodge_torque: Vec = field(default_factory=Vec)
+    dodge_direction: Vec = field(default_factory=Vec)
+    auto_flip: Clock = field(default_factory=Clock)
+    auto_flip_right: bool = False
+    auto_flip_duration: float = 0.0
+    boost: Clock = field(default_factory=Clock)
+    boost_amount: float = 0.333
+    air_control: Clock = field(default_factory=Clock)
+    handbrake: float = 0.0
+    held_input: CarControls = field(default_factory=lambda: CarControls())
+    wheels: list = field(default_factory=lambda: [WheelContact() for _ in range(4)])
+    world_contact: bool = False
+    world_contact_normal: Vec = field(default_factory=Vec)
+    bump_victim: int | None = None          # the index (in arena.get_cars()) of the car it last bumped
+    bump_time: float = 0.0                  # when, in physics time (Arena.physics_frame / 120)
+    ball_impact_frame: int = 0              # the frame of its last ball hit with the extra impulse
+    ball_touch_frame: int = 0
+
+    def to_row(self) -> list:
+        b = lambda x: 1.0 if x else 0.0
+        r = [b(self.driving), b(self.on_ground), b(self.jumped), b(self.double_jumped), b(self.supersonic),
+             self.supersonic_time, b(self.jump.active), self.jump.time, b(self.jump_released), b(self.double_jump.active),
+             self.double_jump.time, b(self.dodge.active), self.dodge.time, *self.dodge_torque, *self.dodge_direction,
+             b(self.auto_flip.active), self.auto_flip.time, b(self.auto_flip_right), self.auto_flip_duration,
+             b(self.boost.active), self.boost.time,
+             self.boost_amount, b(self.air_control.active), self.air_control.time, self.handbrake, *self.held_input.row()]
+        r += [b(w.contact) for w in self.wheels]
+        for w in self.wheels:
+            r += list(w.normal)
+        r += [b(self.world_contact), *self.world_contact_normal]
+        r += [-1.0 if self.bump_victim is None else float(self.bump_victim), self.bump_time, float(self.ball_impact_frame),
+              float(self.ball_touch_frame)]
+        return r
+
+    @staticmethod
+    def from_row(r) -> "CarHidden":
+        b = lambda k: r[k] != 0.0
+        v = lambda k: Vec(r[k], r[k + 1], r[k + 2])
+        held = CarControls(r[29], r[30], r[31], r[32], r[33], r[34] > 0.5, r[35] > 0.5, r[36] > 0.5)
+        return CarHidden(b(0), b(1), b(2), b(3), b(4), r[5], Clock(b(6), r[7]), b(8), Clock(b(9), r[10]), Clock(b(11), r[12]),
+                         v(13), v(16), Clock(b(19), r[20]), b(21), r[22], Clock(b(23), r[24]), r[25], Clock(b(26), r[27]), r[28],
+                         held, [WheelContact(b(37 + w), v(41 + 3 * w)) for w in range(4)], b(53), v(54),
+                         None if r[57] < 0 else int(r[57]), r[58], int(r[59]), int(r[60]))
+
+
+@dataclass
+class BodyState:
+    """A rigid body exactly as the physics holds it, in Bullet units (1 = 50 uu): no rounding anywhere, so setting a
+    body you got back gives the same next ticks. `basis` is the rotation matrix by rows (9 numbers)."""
+    origin: Vec = field(default_factory=Vec)
+    basis: tuple = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+    lin_vel: Vec = field(default_factory=Vec)
+    ang_vel: Vec = field(default_factory=Vec)
+    asleep: bool = False
+    deactivation_time: float = 0.0
+
+    def to_row(self) -> list:
+        return [*self.origin, *self.basis, *self.lin_vel, *self.ang_vel, 1.0 if self.asleep else 0.0, self.deactivation_time]
+
+    @staticmethod
+    def from_row(r) -> "BodyState":
+        return BodyState(Vec(r[0], r[1], r[2]), tuple(r[3:12]), Vec(r[12], r[13], r[14]), Vec(r[15], r[16], r[17]),
+                         r[18] != 0.0, r[19])
+
+
+@dataclass
+class RoundState:
+    """The round's hidden state. `phase`: 0 countdown, 1 playing, 2 after a goal, 3 ended; `phase_left`: countdown ticks
+    or post-goal seconds left. `countdown_clock`: the game's own countdown when it runs: (seconds shown, start timer's
+    elapsed seconds or -1, update timer's elapsed seconds or -1)."""
+    physics_frame: int = 0
+    phase: int = 1
+    phase_left: float = 0.0
+    countdown_clock: tuple | None = None
+    ball_has_been_hit: bool = False
+    ball_held: bool = False
+    game_time: float = 300.0
+    score: tuple = (0, 0)
+
+
 class CarConfig:
     """A car's hitbox and wheels: one of the game's handling presets, or a car body by name or product id."""
     OCTANE = "Octane"
@@ -224,6 +336,7 @@ class CarState:
     air_time_since_jump: float = 0.0
     time_spent_boosting: float = 0.0
     last_controls: CarControls = field(default_factory=CarControls)
+    hidden: CarHidden | None = None      # filled by get_state; set_state applies it when present
 
 
 @dataclass
@@ -244,6 +357,18 @@ class BoostPad:
         n = len(self._arena._pads)
         return BoostPadState(row[9 + self.index] > 0.5, row[9 + n + self.index])
 
+    def set_state(self, s: BoostPadState) -> None:
+        """Taken with `cooldown` seconds left, or available."""
+        cd = float(s.cooldown)
+        self._arena._native_arena().set_pad(self.index, (not s.is_active) and cd > 0, cd, 0.0)
+
+    def get_timer(self) -> tuple:
+        """Exact: (taken, the timer's length, its elapsed seconds)."""
+        return tuple(self._arena._native_arena().pad(self.index))
+
+    def set_timer(self, taken: bool, length: float, elapsed: float) -> None:
+        self._arena._native_arena().set_pad(self.index, bool(taken), float(length), float(elapsed))
+
 
 # ---------------------------------------------------------------- the arena
 
@@ -262,6 +387,19 @@ class Ball:
 
     def get_radius(self) -> float:
         return self.RADIUS
+
+    def get_body(self) -> "BodyState | None":
+        """The ball's body exactly (Bullet units), or None while there is no ball (after a goal's explosion)."""
+        r = self._arena._native_arena().ball_body()
+        return None if r is None else BodyState.from_row(r)
+
+    def set_body(self, b: "BodyState") -> None:
+        """Write the ball's body exactly: no rounding, asleep as given."""
+        self._arena._native_arena().set_ball_body(b.to_row())
+
+    def set_held(self, held: bool) -> None:
+        """Hold the ball still where it is, as the game does at a kickoff while every car is held."""
+        self._arena._native_arena().set_ball_held(bool(held))
 
 
 class Car:
@@ -291,11 +429,59 @@ class Car:
                         is_supersonic=r[26] > 0.5, is_demoed=r[27] > 0.5, demo_respawn_timer=r[28],
                         handbrake_val=r[30], wheels_with_contact=int(r[32]), flip_time=h[9],
                         air_time=h[11], air_time_since_jump=h[12], time_spent_boosting=h[13],
-                        last_controls=self.controls)
+                        last_controls=self.controls, hidden=self.get_hidden())
 
     def set_state(self, s: CarState) -> None:
+        """Position, rotation (through the game's integer rotator, as its own state setting does), velocities and boost
+        (a whole number); then `s.hidden`, when present. For an exact body use `set_body`."""
         a = s.rot_mat.as_angle()
-        self._arena._native_arena().set_car(self._slot, [*s.pos, *s.vel, *s.ang_vel, a.yaw, a.pitch, a.roll, s.boost])
+        n = self._arena._native_arena()
+        n.set_car(self._slot, [*s.pos, *s.vel, *s.ang_vel, a.yaw, a.pitch, a.roll, s.boost])
+        if s.hidden is not None:
+            row = s.hidden.to_row()
+            if abs(s.boost - s.hidden.boost_amount * 100.0) > 1e-3:      # the public boost was changed: it wins
+                row[25] = n.car_hidden(self._slot)[25]
+            n.set_car_hidden(self._slot, row)
+
+    def get_hidden(self) -> "CarHidden | None":
+        """The car's hidden state, or None while it is demolished."""
+        r = self._arena._native_arena().car_hidden(self._slot)
+        return None if r is None else CarHidden.from_row(r)
+
+    def set_hidden(self, h: "CarHidden") -> None:
+        """Set the hidden state. The held input goes through the game's input store (8-bit axes), with no jump press."""
+        self._arena._native_arena().set_car_hidden(self._slot, h.to_row())
+
+    def get_body(self) -> "BodyState | None":
+        """The car's body exactly (Bullet units), or None while it is demolished."""
+        r = self._arena._native_arena().car_body(self._slot)
+        return None if r is None else BodyState.from_row(r)
+
+    def set_body(self, b: "BodyState") -> None:
+        """Write the car's body exactly (no rounding of the rotation). A demolished car gets its body back."""
+        self._arena._native_arena().set_car_body(self._slot, b.to_row())
+
+    def dodge_from_input(self, forward: float, right: float):
+        """The dodge torque and direction the game gives this car for a dodge input (forward, right): (Vec, Vec), for
+        `CarHidden.dodge_torque` and `dodge_direction`. RocketSim v3's `flip_rel_torque` (x, y) is (-right, forward)."""
+        t, d = self._arena._native_arena().dodge_from_input(self._slot, float(forward), float(right))
+        return Vec(*t), Vec(*d)
+
+    def demolish_now(self, respawn_in: float = 3.0) -> None:
+        """Take the car's body away as a demolition does; it respawns after `respawn_in` seconds (with round flow)."""
+        self._arena._native_arena().set_car_demolished(self._slot, float(respawn_in))
+
+    def set_driving(self, on: bool) -> None:
+        """Whether the car takes input (the game turns it off during countdowns and after goals)."""
+        self._arena._native_arena().set_driving(self._slot, bool(on))
+
+    def add_boost(self, amount: float) -> None:
+        """Add boost as a pickup does (0 to 100)."""
+        self._arena._native_arena().add_boost(self._slot, float(amount) / 100.0)
+
+    def queue_respawn(self, pos: "Vec", rotator: tuple) -> None:
+        """Where this car's next respawn goes (uu; pitch, yaw, roll with 65536 a turn); otherwise the game's choice."""
+        self._arena._native_arena().queue_respawn(self._slot, list(pos), [int(x) for x in rotator])
 
     def demolish(self) -> None:
         raise NotImplementedError("catSim demolishes cars only through the game's own rules (a supersonic hit)")
@@ -474,8 +660,56 @@ class Arena:
         """The ball's future path (cars left out), `ticks` ticks ahead, one state every `every` ticks."""
         return [BallState(Vec(*r[0:3]), Vec(*r[3:6]), Vec(*r[6:9])) for r in self._native_arena().predict_ball(ticks, every)]
 
+    def copy(self) -> "Arena":
+        """An exact copy: bodies, contact caches, every timer. Stepping both with the same controls gives the same
+        result bit for bit. (Callbacks are not copied.)"""
+        a = Arena.__new__(Arena)
+        a.__dict__.update(self.__dict__)
+        a._cars = []
+        for c in self._cars:
+            twin = Car(a, c.id, c.team, c.config, c.loadout)
+            twin.controls = c.controls
+            a._cars.append(twin)
+        a.ball = Ball(a)
+        a._pads = [BoostPad(a, p.index, p.pos, p.is_big) for p in self._pads]
+        a._goal_cb = a._bump_cb = a._touch_cb = None
+        a._native = self._native_arena().copy()
+        return a
+
+    @property
+    def physics_frame(self) -> int:
+        """The physics frame number (one more each tick); `CarHidden`'s hit gates count in it."""
+        return self._native_arena().physics_frame
+
+    def get_round(self) -> "RoundState":
+        r = self._native_arena().round_hidden()
+        return RoundState(r[0], r[1], r[2], None if r[3] is None else tuple(r[3]), r[4], r[5], r[6], tuple(r[7]))
+
+    def set_round(self, r: "RoundState") -> None:
+        cc = r.countdown_clock
+        cc = None if cc is None else (int(cc[0]), float(cc[1]), float(cc[2]))
+        self._native_arena().set_round_hidden(int(r.physics_frame), int(r.phase), float(r.phase_left), cc,
+                                              bool(r.ball_has_been_hit), bool(r.ball_held), float(r.game_time),
+                                              [int(x) for x in r.score])
+
+    def use_game_countdown(self, on: bool = True) -> None:
+        """With `round_flow`, run later kickoffs' countdowns on the game's own clock (a 1 s start, then 3, 2, 1)."""
+        self._native_arena().use_game_countdown(bool(on))
+
+    def set_pad_rule(self, on: bool) -> None:
+        """The game's own boost pad pickups on (the default) or off (then pads change only by `BoostPad.set_state` and
+        boost only by `Car.add_boost`)."""
+        self._native_arena().set_pad_rule(bool(on))
+
+    def queue_kickoff(self, spots) -> None:
+        """Where the next kickoff puts the cars: one (Vec uu, (pitch, yaw, roll)) per car in order; otherwise the game's
+        own choice."""
+        self._native_arena().queue_kickoff([(list(p), [int(x) for x in r]) for p, r in spots])
+
     def clone(self) -> "Arena":
-        """A new arena with the same cars and the same ball and car states (hidden timers start fresh)."""
+        """A new arena with the same cars, ball and car states, bodies exact and hidden state included (contact caches
+        start empty: `copy()` keeps those too)."""
+
         a = Arena(self.game_mode, self.tick_rate, self.round_flow, self.map)
         for c in self._cars:
             a.add_car(c.team, CarConfig(c.config.name), c.loadout).set_controls(c.controls)
@@ -484,4 +718,8 @@ class Arena:
             st = mine.get_state()
             if not st.is_demoed:
                 theirs.set_state(st)
+                theirs.set_body(mine.get_body())
+        b = self.ball.get_body()
+        if b is not None:
+            a.ball.set_body(b)
         return a

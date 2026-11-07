@@ -18,3 +18,5 @@ pub mod round;
 
 #[cfg(feature = "flow")]
 pub mod frame_rng;
+#[cfg(feature = "flow")]
+pub mod hidden;

@@ -165,6 +165,7 @@ pub fn state_rotator(s: &RbState) -> Rotator {
     matrix_to_rotator(&crate::game::rb_state::quat_to_matrix(s.quat))
 }
 
+#[derive(Clone)]
 pub struct ArenaSlot {
     pub arena: Arena,
     pub num_cars: usize,

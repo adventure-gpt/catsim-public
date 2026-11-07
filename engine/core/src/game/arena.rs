@@ -979,6 +979,11 @@ impl Arena {
         b
     }
 
+    /// Take a car's body out of the world now (the player stays; `set_car_fresh` or a respawn gives it a new body).
+    pub fn remove_car_body(&mut self, i: usize) {
+        self.destroy_car(i);
+    }
+
     fn destroy_car(&mut self, i: usize) {
         let Some(car) = self.players[i].car.take() else { return };
         if let Some(m) = &mut self.frame_rng { m.car_removed(i); }

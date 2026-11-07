@@ -7,6 +7,8 @@ use catsim::game::car::VehicleInputs;
 use catsim::game::config::{body_spawn, preset, Preset};
 use catsim::game::pads::PadLayout;
 use catsim::game::rb_state::RbState;
+use catsim::game::hidden::{self, BodyState, CarHidden, RoundHidden};
+use catsim::math::rot::Rotator;
 use catsim::math::v3;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -71,6 +73,18 @@ fn hidden_fields() -> Vec<String> {
     adapter::hidden_field_names()
 }
 
+/// The names of `NativeArena.car_hidden`'s numbers, in order.
+#[pyfunction]
+fn car_hidden_fields() -> Vec<String> {
+    hidden::CAR_HIDDEN_FIELDS.iter().map(|s| s.to_string()).collect()
+}
+
+/// The names of `NativeArena.car_body`'s and `ball_body`'s numbers, in order.
+#[pyfunction]
+fn body_fields() -> Vec<String> {
+    hidden::BODY_FIELDS.iter().map(|s| s.to_string()).collect()
+}
+
 fn layout(map: &str) -> PyResult<PadLayout> {
     PadLayout::from_map(map).ok_or_else(|| PyValueError::new_err(format!("catSim knows the maps Stadium_P and UF_Night_P, not {map}")))
 }
@@ -91,6 +105,7 @@ fn inputs(rows: &[[f32; 8]], n: usize) -> PyResult<Vec<VehicleInputs>> {
 }
 
 #[pyclass(unsendable, module = "catsim._native")]
+#[derive(Clone)]
 pub struct NativeArena {
     slot: ArenaSlot,
     dir: PathBuf,
@@ -129,6 +144,165 @@ impl NativeArena {
 
 #[pymethods]
 impl NativeArena {
+    /// An exact copy of this arena: bodies, contact caches, timers, everything (the next ticks are identical).
+    fn copy(&self) -> Self {
+        self.clone()
+    }
+
+    /// The physics frame number (one more each tick).
+    #[getter]
+    fn physics_frame(&self) -> i32 {
+        self.slot.arena.physics_frame
+    }
+
+    /// A car's hidden state as numbers named by `car_hidden_fields()`, or None while it is demolished.
+    fn car_hidden(&self, i: usize) -> PyResult<Option<Vec<f64>>> {
+        self.check_car(i)?;
+        Ok(self.slot.arena.car_hidden(i).map(|h| h.to_row()))
+    }
+
+    /// Set a car's hidden state from `car_hidden_fields()` numbers. The held input goes through the game's input
+    /// store (8-bit axes) with no jump press or release.
+    fn set_car_hidden(&mut self, i: usize, row: Vec<f64>) -> PyResult<()> {
+        self.check_car(i)?;
+        let h = CarHidden::from_row(&row).ok_or_else(|| PyValueError::new_err(format!("need {} numbers", hidden::CAR_HIDDEN_FIELDS.len())))?;
+        if !self.slot.arena.set_car_hidden(i, &h) {
+            return Err(PyRuntimeError::new_err("that car is demolished and has no hidden state to set"));
+        }
+        Ok(())
+    }
+
+    /// A car's body exactly as the physics holds it, as numbers named by `body_fields()` (Bullet units: 1 = 50 uu),
+    /// or None while it is demolished.
+    fn car_body(&self, i: usize) -> PyResult<Option<Vec<f64>>> {
+        self.check_car(i)?;
+        Ok(self.slot.arena.car_body(i).map(|b| b.to_row()))
+    }
+
+    /// Write a car's body exactly (no rounding of the rotation). A demolished car gets a body back.
+    fn set_car_body(&mut self, i: usize, row: Vec<f64>) -> PyResult<()> {
+        self.check_car(i)?;
+        let b = BodyState::from_row(&row).ok_or_else(|| PyValueError::new_err(format!("need {} numbers", hidden::BODY_FIELDS.len())))?;
+        let a = &mut self.slot.arena;
+        if a.players[i].car.is_none() {
+            let s = RbState { location: v3(b.origin.x * 50.0, b.origin.y * 50.0, b.origin.z * 50.0), ..RbState::default() };
+            a.set_car_fresh(i, &s, 0.0);
+        }
+        a.set_car_body(i, &b);
+        Ok(())
+    }
+
+    /// The ball's body exactly (Bullet units), or None when there is no ball.
+    fn ball_body(&self) -> Option<Vec<f64>> {
+        self.slot.arena.ball_body().map(|b| b.to_row())
+    }
+
+    /// Write the ball's body exactly.
+    fn set_ball_body(&mut self, row: Vec<f64>) -> PyResult<()> {
+        let b = BodyState::from_row(&row).ok_or_else(|| PyValueError::new_err(format!("need {} numbers", hidden::BODY_FIELDS.len())))?;
+        self.slot.arena.set_ball_body(&b);
+        Ok(())
+    }
+
+    /// The dodge torque and direction the game gives car `i` for a dodge input (forward, right).
+    fn dodge_from_input(&self, i: usize, forward: f32, right: f32) -> PyResult<([f32; 3], [f32; 3])> {
+        self.check_car(i)?;
+        let (t, d) = self.slot.arena.dodge_from_input(i, forward, right).ok_or_else(|| PyRuntimeError::new_err("that car is demolished"))?;
+        Ok(([t.x, t.y, t.z], [d.x, d.y, d.z]))
+    }
+
+    /// Demolish car `i` now; it respawns after `respawn_left` seconds.
+    fn set_car_demolished(&mut self, i: usize, respawn_left: f32) -> PyResult<()> {
+        self.check_car(i)?;
+        self.slot.arena.set_car_demolished(i, respawn_left);
+        Ok(())
+    }
+
+    /// Car `i`'s next respawn goes here: (x, y, z) uu and a rotator (pitch, yaw, roll; 65536 a turn).
+    fn queue_respawn(&mut self, i: usize, loc: [f32; 3], rot: [i32; 3]) -> PyResult<()> {
+        self.check_car(i)?;
+        self.slot.arena.queue_respawn_spot(i, v3(loc[0], loc[1], loc[2]), Rotator { pitch: rot[0], yaw: rot[1], roll: rot[2] });
+        Ok(())
+    }
+
+    /// The next kickoff puts the cars here, one ((x, y, z) uu, (pitch, yaw, roll)) per car in order.
+    fn queue_kickoff(&mut self, spots: Vec<([f32; 3], [i32; 3])>) -> PyResult<()> {
+        if spots.len() != self.slot.num_cars {
+            return Err(PyValueError::new_err("need one spot per car"));
+        }
+        let q = spots.iter().map(|(l, r)| (v3(l[0], l[1], l[2]), Rotator { pitch: r[0], yaw: r[1], roll: r[2] })).collect();
+        self.slot.arena.queue_kickoff_spots(q);
+        Ok(())
+    }
+
+    /// The round's hidden state: (physics frame, phase 0 countdown / 1 active / 2 after a goal / 3 ended, ticks or
+    /// seconds left in it, countdown clock (remaining, start timer elapsed, update timer elapsed) or None,
+    /// ball has been hit, ball held, game time, score).
+    #[allow(clippy::type_complexity)]
+    fn round_hidden(&self) -> (i32, i32, f32, Option<(i32, f32, f32)>, bool, bool, f32, [i32; 2]) {
+        let r = self.slot.arena.round_hidden();
+        (r.physics_frame, r.phase, r.phase_left, r.countdown_clock, r.ball_has_been_hit, r.ball_held_2d, r.game_time, r.score)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn set_round_hidden(&mut self, physics_frame: i32, phase: i32, phase_left: f32, countdown_clock: Option<(i32, f32, f32)>,
+                        ball_has_been_hit: bool, ball_held: bool, game_time: f32, score: [i32; 2]) {
+        let r = RoundHidden { physics_frame, phase, phase_left, countdown_clock, ball_has_been_hit, ball_held_2d: ball_held, game_time, score };
+        self.slot.arena.set_round_hidden(&r);
+    }
+
+    /// Use the game's own 3-second kickoff countdown for later kickoffs (with `round_flow`).
+    fn use_game_countdown(&mut self, on: bool) {
+        self.slot.arena.use_game_countdown(on);
+    }
+
+    /// A boost pad: (taken, its timer's length, the timer's elapsed seconds).
+    fn pad(&self, i: usize) -> PyResult<(bool, f32, f32)> {
+        let p = self.slot.arena.pads.pads.get(i).ok_or_else(|| PyIndexError::new_err(format!("no pad {i}")))?;
+        Ok((p.picked_up, p.timer.rate, p.timer.elapsed))
+    }
+
+    /// Set a boost pad: taken or not, and its timer (length and elapsed seconds; a taken pad comes back when the
+    /// elapsed time passes the length).
+    fn set_pad(&mut self, i: usize, taken: bool, rate: f32, elapsed: f32) -> PyResult<()> {
+        let p = self.slot.arena.pads.pads.get_mut(i).ok_or_else(|| PyIndexError::new_err(format!("no pad {i}")))?;
+        *p = catsim::game::pads::Pad::cooldown(if taken { rate } else { 0.0 });
+        if taken {
+            p.timer.elapsed = elapsed;
+            p.respawn_left = (rate - elapsed).max(0.0);
+        }
+        Ok(())
+    }
+
+    /// The game's boost pad pickups on or off (off: pads only change through `set_pad` and `add_boost`).
+    fn set_pad_rule(&mut self, on: bool) {
+        self.slot.arena.pad_rule_on = on;
+    }
+
+    /// Give car `i` this much boost (0 to 1 is empty to full), as a pickup does.
+    fn add_boost(&mut self, i: usize, amount: f32) -> PyResult<()> {
+        self.check_car(i)?;
+        if let Some(c) = self.slot.arena.players[i].car.as_mut() {
+            let v = c.boost.amount + amount;
+            c.boost.set_amount(v);
+        }
+        Ok(())
+    }
+
+    /// Car `i` takes input or not (the game turns it off during countdowns and after goals).
+    fn set_driving(&mut self, i: usize, on: bool) -> PyResult<()> {
+        self.check_car(i)?;
+        if let Some(c) = self.slot.arena.players[i].car.as_mut() {
+            c.set_driving(on);
+        }
+        Ok(())
+    }
+
+    /// Hold the ball in place (the game does while every car is held at a kickoff), or let it go.
+    fn set_ball_held(&mut self, on: bool) {
+        self.slot.arena.ball_held_2d = on;
+    }
+
     /// `cars`: (body or preset name, team 0 blue / 1 orange) in the order they join. `round_flow`: run
     /// the game's own goal, explosion and restart flow; off, a goal is only reported. `map`: Stadium_P or
     /// UF_Night_P (the same field; UF_Night_P has its own pad heights and no planes behind the goals).
@@ -395,6 +569,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(car_fields, m)?)?;
     m.add_function(wrap_pyfunction!(arena_fields, m)?)?;
     m.add_function(wrap_pyfunction!(hidden_fields, m)?)?;
+    m.add_function(wrap_pyfunction!(car_hidden_fields, m)?)?;
+    m.add_function(wrap_pyfunction!(body_fields, m)?)?;
     m.add_function(wrap_pyfunction!(pad_locations, m)?)?;
     m.add_class::<NativeArena>()?;
     m.add("ENGINE", "catsim")?;
