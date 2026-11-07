@@ -29,6 +29,7 @@ struct RArena {
     presets: Vec<u32>,
     teams: Vec<u32>,
     pads_from_recording: bool,
+    started: bool,                 // set from a whole state once (a later partial state builds on it)
 }
 
 fn preset(name: &str) -> u32 {
@@ -176,14 +177,14 @@ impl Sim for Rlmax {
 
     fn new_arena(&self, cars: &[CarSpec], _map: &str) -> Result<RArena, String> {
         Ok(RArena { a: Arena::new(cars.len() as u32), presets: cars.iter().map(|c| preset(&c.preset)).collect(),
-                    teams: cars.iter().map(|c| c.team as u32).collect(), pads_from_recording: false })
+                    teams: cars.iter().map(|c| c.team as u32).collect(), pads_from_recording: false, started: false })
     }
 
     fn set_state(&self, ra: &mut RArena, st: &Value) -> Result<(), String> {
         ra.pads_from_recording = b(st, "pads_from_recording");
         let cars = st["cars"].as_array().ok_or("state needs cars")?;
         let next = st.get("next_controls").and_then(Value::as_array);
-        if partial(st) {
+        if ra.started && partial(st) {
             // set what is given, onto the arena's own state (contacts, broadphase and pad timers kept)
             for (i, c) in cars.iter().enumerate() {
                 if c.is_null() {
@@ -216,6 +217,7 @@ impl Sim for Rlmax {
         }
         let cs: Vec<CarState> = cars.iter().enumerate().map(|(i, c)| car_state(c, ra.teams[i], ra.presets[i], next.and_then(|n| n.get(i)))).collect();
         ra.a = Arena::from_physical(self.data(), &ball_state(&st["ball"]), &cs);
+        ra.started = true;
         Ok(())
     }
 
