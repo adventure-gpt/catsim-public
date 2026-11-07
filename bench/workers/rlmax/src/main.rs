@@ -187,6 +187,13 @@ impl Sim for Rlmax {
         ra.pads_from_recording = b(st, "pads_from_recording");
         let cars = st["cars"].as_array().ok_or("state needs cars")?;
         let next = st.get("next_controls").and_then(Value::as_array);
+        if ra.started && st["ball"].is_null() && cars.iter().all(|c| !c.is_null() && has(c, "boost")) {
+            // every car new and the ball as it is (a kickoff's births): a clean arena holding the ball's own state
+            let cs: Vec<CarState> = cars.iter().enumerate().map(|(i, c)| car_state(c, ra.teams[i], ra.presets[i], next.and_then(|n| n.get(i)))).collect();
+            let ball = ra.a.ball();
+            ra.a = Arena::from_physical(self.data(), &ball, &cs);
+            return Ok(());
+        }
         if ra.started && partial(st) {
             // set what is given, onto the arena's own state (contacts, broadphase and pad timers kept)
             for (i, c) in cars.iter().enumerate() {
