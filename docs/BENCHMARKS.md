@@ -17,9 +17,7 @@ In plain words:
 
 - **Level A, physics only.** Each simulator starts from the game's whole internal state and runs the recorded inputs.
   RocketGPU is exact on every tick; that is its own published result, and our scorer reproduces it. catSim gets
-  nearly all of it. The segments it still misses are catSim's own physics: run in from the segment before, catSim
-  misses at the same tick. They are not a gap in how the start state is handed over. RocketSim v3 can't take this
-  start.
+  nearly all of it. RocketSim v3 can't take this start.
 - **Level B, from the public state.** Every simulator has to guess the hidden state from what RocketSim v3's
   `CarState` holds. The numbers measure physics and guessing together.
 - **Whole games (C, D).** catSim plays our recorded games to the end exactly. The other simulators get the match flow
@@ -126,10 +124,10 @@ level A, and RocketSim v3's row at level B.
 - **Level B, packet fields only** (a variant): only what an RLBot v5 packet lists (position, rotation, velocities,
   boost, the jump and dodge flags, the air state, the dodge clock and direction, the last input). More guessing.
 
-**catSim's level A misses are catSim's own physics.** For every segment catSim misses, the harness also runs catSim
-from the previous segment's start straight into it. In almost every case that run-in misses at the same tick, so
-the start state was handed over correctly and the physics went wrong at that tick. The misses, sorted by what was
-happening at the time, feed catSim's next accuracy round.
+**Where catSim misses at level A.** A segment catSim misses can be checked by running catSim from the previous
+segment's start straight into it. If that run-in misses at the same tick, the miss is catSim's own physics. If the
+run-in is exact there, the miss comes from translating the start state into catSim's layout. Both kinds remain, and
+both are catSim's to fix (the translation is part of catSim's worker, not of the other simulators).
 
 ### RocketSim's own replay metric
 
