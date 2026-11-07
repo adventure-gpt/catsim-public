@@ -97,6 +97,17 @@ impl<'a> Full<'a> {
         Mat3 { r: [v3(fwd[0], right[0], up[0]), v3(fwd[1], right[1], up[1]), v3(fwd[2], right[2], up[2])] }
     }
 
+    /// The render alpha of the frame before the start state's tick, when the state has it.
+    pub fn frame_frac_prev(&self) -> Option<f32> {
+        let v = self.whole_f("env_states.frame_frac_prev");
+        v.first().copied().filter(|x| x.is_finite() && *x >= 0.0)
+    }
+
+    /// Physics steps the frame in progress at the start state had already run.
+    pub fn frame_ticks(&self) -> i32 {
+        (self.whole_u("env_states.frame_ticks") & 0xffff) as i32
+    }
+
     /// The broadphase handles the start state's bodies hold (ball, then the cars), when the state has them.
     pub fn handles(&self, nc: usize) -> Option<Vec<u16>> {
         let r = self.raw("solver_scratch.bp.sweep.sap_body_handle");

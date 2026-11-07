@@ -28,8 +28,12 @@ struct CatArena {
     a: Arena,
     inputs: Vec<VehicleInputs>,
     timer_hold: bool,
-    /// The render alpha the last frame ended with (none before a segment's first frame).
+    /// The render alpha the last frame ended with (from the start state before a segment's first frame).
     last_alpha: Option<f32>,
+    /// The last frame's time as its render alpha says, for the next frame's clocks.
+    last_frame_time: Option<f32>,
+    /// Physics steps the frame in progress at the start state had already run (a segment can start inside a frame).
+    steps_before: i32,
 }
 
 /// A car configuration (the full-state suite's `CarConfig`) -> catSim's preset (by hitbox length) and body (by spawn
@@ -294,7 +298,7 @@ impl Sim for Cat {
             }
         }
         Cat::kickoff(&mut a, cars.len());
-        Ok(CatArena { a, inputs: vec![VehicleInputs::default(); cars.len()], timer_hold: false, last_alpha: None })
+        Ok(CatArena { a, inputs: vec![VehicleInputs::default(); cars.len()], timer_hold: false, last_alpha: None, last_frame_time: None, steps_before: 0 })
     }
 
     fn set_state(&self, ca: &mut CatArena, st: &Value) -> Result<(), String> {
@@ -397,6 +401,10 @@ impl Sim for Cat {
             }
         }
         ca.timer_hold = b(&req["start"], "timer_hold");
+        // the render alpha the frame before the segment's first ended with
+        ca.last_alpha = f.frame_frac_prev();
+        ca.last_frame_time = None;
+        ca.steps_before = f.frame_ticks();
         ca.a.pad_rule_on = false;
         let dt0 = req.get("dt0").and_then(Value::as_f64).map(|x| x as f32).filter(|&x| x > 0.0).unwrap_or(1.0 / 120.0);
         f.apply(&mut ca.a, req, dt0)?;
@@ -447,20 +455,25 @@ impl Sim for Cat {
 }
 
 impl Cat {
-    /// A frame's time when the recording has none (the harness gives 1/120 s a tick then): what the render alpha says.
-    /// The game's physics accumulator gains the frame's time and loses 1/120 s a physics step, and the alpha is what is
-    /// left over 1/120 s, so the frame took its steps plus the alpha's change (on the suite's kickoffs this puts the
-    /// countdown's end on the game's tick 927 times in 932, against 883 at 1/120 s a tick). A segment's first frame
-    /// keeps 1/120 s a tick: the recorder's capture of the start state moves the alpha there (at 690 of the suite's 720
-    /// respawn starts), and the game's clocks don't see it.
+    /// The clocks' time for a frame when the recording has none (the harness gives 1/120 s a tick then): the frame
+    /// before's, as its render alpha says. The game's physics accumulator gains a frame's time and loses 1/120 s a
+    /// physics step, and the alpha is what is left over 1/120 s, so a frame took its steps plus the alpha's change; the
+    /// round's countdown runs on that time one frame late (the state's countdown holds the frames before the segment's
+    /// first). In float32 as `(steps + alpha - alpha before) * (1/120)`. On the suite's kickoffs this puts the
+    /// countdown's end on the game's tick in every segment, against 883 of 932 at 1/120 s a tick. A segment's first
+    /// frame keeps 1/120 s a tick; a segment that starts inside a frame counts that frame's steps before it.
     fn frame_time(ca: &mut CatArena, steps: i32, given: f32, alpha: f32) -> f32 {
         let nominal = (f64::from(steps) / 120.0) as f32;
-        let t = match ca.last_alpha {
-            Some(prev) if given == nominal => ((f64::from(steps) + f64::from(alpha) - f64::from(prev)) / 120.0) as f32,
-            _ => given,
-        };
+        if given != nominal {
+            ca.last_alpha = Some(alpha);
+            ca.last_frame_time = None;
+            return given;
+        }
+        let t = ca.last_frame_time.filter(|&t| t > 0.0).unwrap_or(given);
+        let steps = steps + core::mem::take(&mut ca.steps_before);
+        ca.last_frame_time = ca.last_alpha.map(|prev| (steps as f32 + alpha - prev) * (1.0f32 / 120.0));
         ca.last_alpha = Some(alpha);
-        if t > 0.0 { t } else { given }
+        t
     }
 
     fn controls(ca: &mut CatArena, inp: &[[f32; TICK_CAR]]) {
