@@ -127,6 +127,9 @@ def configs(plan: str, max_threads: int, device: str = "cpu") -> list:
     return out
 
 
+ONLY = None   # optional filter: {(mode, arenas, threads)} from --only, to re-run some rows
+
+
 def run(names: list, setup_env: dict, plan: str, rounds: int, max_threads: int, seed: int, log_dir, emit, only_device=None):
     """Run the plan, CPU simulators and GPU simulators apart (never in one table); `emit(record)` gets one record per
     simulator and configuration. A simulator whose thread count is fixed when it starts (caps "threads_at_setup") is
@@ -164,6 +167,8 @@ def _run_group(names, hello, setup_env, plan, rounds, max_threads, seed, log_dir
         return workers[n]
 
     for mode, arenas, threads, decisions in configs(plan, max_threads, device):
+        if ONLY and (mode, arenas, threads) not in ONLY:
+            continue
         ts = MODES[mode]
         st = starts(arenas, ts, seed)
         ctl, rows = controls(arenas, 2 * ts, decisions, seed)

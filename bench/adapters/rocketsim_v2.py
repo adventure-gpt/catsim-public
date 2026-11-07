@@ -143,7 +143,13 @@ class RocketSimV2(Adapter):
         """Batched: every arena's controls, then Arena.multi_step over all of them (the package's own threads), then every
         arena's state through get_gym_state; one arena on one thread: arena.step."""
         cars = job["cars"]
-        arenas = [self.new_arena(cars, ball_rotation=False) for _ in range(job["arenas"])]
+        # the package doesn't free an Arena's C++ side when Python drops it: reuse one set of arenas per roster
+        key = (tuple((c["preset"], c["team"]) for c in cars), job["arenas"])
+        if getattr(self, "_speed_key", None) != key:
+            self._speed_arenas = None
+            self._speed_arenas = [self.new_arena(cars, ball_rotation=False) for _ in range(job["arenas"])]
+            self._speed_key = key
+        arenas = self._speed_arenas
         n_dec, k = controls.shape[1], job["decision_ticks"]
         threaded = job["threads"] > 1
         out = []

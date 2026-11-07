@@ -73,6 +73,7 @@ def main(argv=None) -> None:
     ap.add_argument("--rounds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=1106)
     ap.add_argument("--device", choices=["cpu", "gpu"], help="(speed) only simulators on this device")
+    ap.add_argument("--only", help="(speed) only these rows, as mode:arenas:threads[,...] (e.g. 3v3:1024:16)")
     ap.add_argument("--suite-data", help="(suite) the full-state suite's data folder (its README says how to get it)")
     ap.add_argument("--levels", help="accuracy levels to run (default: all the benchmark has)")
     ap.add_argument("--splits", default="all", help="(suite) which of its splits")
@@ -102,6 +103,8 @@ def main(argv=None) -> None:
         print(f"== {b}", flush=True)
         if b == "speed":
             from . import speed
+            if a.only:
+                speed.ONLY = {(m, int(n), int(t)) for m, n, t in (x.split(":") for x in a.only.split(","))}
             speed.run(names, env, "quick" if a.plan == "quick" else "full", a.rounds, a.threads, a.seed, out, res.emit, a.device)
         elif b == "suite":
             from . import suite

@@ -72,7 +72,7 @@ class RocketGPU(Adapter):
         import rocketsim as rs
         import rocketgpu_py_cuda as views
         self.rp, self.rs, self.views = rp, rs, views
-        if self.cuda and not rp.SimConfig.is_cuda_build():
+        if self.cuda and not getattr(rp, "is_cuda_build", False):
             raise RuntimeError("SIMBENCH_ROCKETGPU_CUDA points at a CPU build")
         src = Path(path).resolve().parents[1]
         commit = subprocess.run(["git", "-C", str(src), "rev-parse", "--short=10", "HEAD"], capture_output=True, text=True).stdout.strip()
