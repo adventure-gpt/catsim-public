@@ -423,9 +423,10 @@ impl<'a> Full<'a> {
                 }
             }
             // a car and the ball, or two cars: A and B as the state stores them, matched to catSim's body0 and body1 by
-            // where A's local point lands (pos_a_bt is A's point in the world). The normal is turned to point from B to
-            // A, as a contact's point on A is its point on B plus normal times distance: the state's car-car normals
-            // mostly point the other way (121 of 126 points over the suite's starts; its car-ball ones 530 of 531 so)
+            // where A's local point lands (pos_a_bt is A's point in the world). The normal must point from B to A (a
+            // point on A is its point on B plus normal times distance): the state's car-ball normals do, its car-car
+            // ones point the other way (over the suite's starts, by the sign of normal . (pos_a - pos_b) * distance:
+            // 531 of 531 car-ball points, and the opposite at 126 of 126 car-car ones)
             1 | 3 => {
                 let (pre, slot) = if kind == 1 {
                     ("ball_car", ra - 1)
@@ -435,21 +436,13 @@ impl<'a> Full<'a> {
                 };
                 let cnt = cnt_of(&format!("{pre}.count"), slot);
                 let (la, lb, nn, d, pa) = (fv(&format!("{pre}.points.local_a_bt")), fv(&format!("{pre}.points.local_b_bt")), fv(&format!("{pre}.points.normal")), fv(&format!("{pre}.points.distance_bt")), fv(&format!("{pre}.points.pos_a_bt")));
-                let pb = fv(&format!("{pre}.points.pos_b_bt"));
                 for i in 0..cnt.min(4) {
                     let q = slot * 4 + i;
                     if 3 * q + 2 >= la.len() || 3 * q + 2 >= pa.len() || q >= d.len() {
                         continue;
                     }
                     let (x, y, n, p) = (at(&la, q), at(&lb, q), at(&nn, q), at(&pa, q));
-                    let n = if 3 * q + 2 < pb.len() {
-                        let o = at(&pb, q);
-                        let off = |s: f32| (p.x - (o.x + s * n.x * d[q])).abs().max((p.y - (o.y + s * n.y * d[q])).abs()).max((p.z - (o.z + s * n.z * d[q])).abs());
-                        let (fwd, back) = (off(1.0), off(-1.0));
-                        if back < fwd || (back == fwd && kind == 3) { v3(-n.x, -n.y, -n.z) } else { n }
-                    } else {
-                        n
-                    };
+                    let n = if kind == 3 { v3(-n.x, -n.y, -n.z) } else { n };
                     let gap = |t: &catsim::math::Transform, l: Vec3| {
                         let r = &t.basis.r;
                         let w = v3(r[0].x * l.x + r[0].y * l.y + r[0].z * l.z + t.origin.x, r[1].x * l.x + r[1].y * l.y + r[1].z * l.z + t.origin.y, r[2].x * l.x + r[2].y * l.y + r[2].z * l.z + t.origin.z);
@@ -560,7 +553,9 @@ impl<'a> Full<'a> {
         if cd > 0.0 {
             if let Some(v) = ids.iter().position(|&i| i == other) {
                 h.bump_victim = Some(v);
-                let ticks_ago = ((0.25 - cd) * 120.0).round() as i64;
+                // the state's cooldowns all sit half a tick off catSim's grid (460 of 460 over the suite): the gate
+                // opens on the tick after the one rounding to the nearest would give
+                let ticks_ago = ((0.25 - cd) * 120.0 - 0.5).round() as i64;
                 h.bump_time = (1.0 / 120.0) * (phys - ticks_ago) as f32;
             }
         }

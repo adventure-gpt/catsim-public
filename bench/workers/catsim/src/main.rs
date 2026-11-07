@@ -56,8 +56,29 @@ fn from_config(cfg: &Value) -> Option<(&'static Preset, Option<&'static catsim::
     }
     match best {
         Some((b, _)) => Some((preset(b.preset)?, Some(b))),
-        None => Some((preset(name)?, None)),
+        None => {
+            // a body catSim's data doesn't list (the suite has two: an Octane and a Hybrid hitbox at 34.77 and
+            // 37.53 uu): the preset's first body at the config's spawn height, with no forward offset
+            let p = preset(name)?;
+            let base = catsim::game::config::BODIES.iter().find(|b| b.preset == p.name);
+            match (mz, base) {
+                (Some(mz), Some(base)) => Some((p, Some(unlisted_body(base, mz)))),
+                _ => Some((p, None)),
+            }
+        }
     }
+}
+
+/// A body made from a listed one at another spawn height, made once and kept.
+fn unlisted_body(base: &catsim::game::config::BodySpawn, mesh_z: f32) -> &'static catsim::game::config::BodySpawn {
+    static MADE: std::sync::Mutex<Vec<&'static catsim::game::config::BodySpawn>> = std::sync::Mutex::new(Vec::new());
+    let mut made = MADE.lock().unwrap();
+    if let Some(b) = made.iter().find(|b| b.product == base.product && b.mesh_z == mesh_z.to_bits()) {
+        return b;
+    }
+    let b: &'static _ = Box::leak(Box::new(catsim::game::config::BodySpawn { mesh_z: mesh_z.to_bits(), forward: 0.0, ..*base }));
+    made.push(b);
+    b
 }
 
 fn preset_of(c: &CarSpec) -> Result<(&'static Preset, Option<&'static catsim::game::config::BodySpawn>), String> {
