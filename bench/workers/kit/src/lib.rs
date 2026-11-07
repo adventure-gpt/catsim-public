@@ -49,6 +49,13 @@ pub trait Sim: Sync {
     fn set_state(&self, a: &mut Self::Arena, state: &Value) -> Result<(), String>;
     /// `inputs`: per car the 8 controls, the may-drive flag and the pad boost gain (0..1) given after the tick.
     fn step(&self, a: &mut Self::Arena, inputs: &[[f32; TICK_CAR]], ticks: u32, frame: Option<[f32; 2]>);
+    /// One tick with its frame row (TICK_FRAME, the suite's layout: render alpha, frame duration, the frame's ticks on
+    /// its first tick, the tick's render fraction (-1 on a frame's earlier ticks), the frame's start time), for the
+    /// harness's flow when the caps say `tick_frames`. The default is `step` with the alpha and the tick's share.
+    fn step_tick(&self, a: &mut Self::Arena, inputs: &[[f32; TICK_CAR]], row: &[f32; TICK_FRAME]) {
+        let n = row[2].max(1.0);
+        self.step(a, inputs, 1, Some([row[0], row[1] / n]));
+    }
     /// Per car then the ball: pos, vel (in `units`), ang_vel, forward, right, up. A car without a body is zeros.
     fn bodies(&self, a: &Self::Arena, out: &mut [[f32; BODY]]);
     /// One game frame of `ticks.len()` physics ticks with the frame's real duration and render alpha (only called when
@@ -291,8 +298,18 @@ pub fn serve<S: Sim>(mut sim: S) {
                 if op == "step" {
                     let f = floats(&payload);
                     let rows: Vec<[f32; TICK_CAR]> = (0..nc).map(|c| f[c * TICK_CAR..(c + 1) * TICK_CAR].try_into().unwrap()).collect();
-                    let frame = req.get("frame").and_then(Value::as_array).map(|v| [v[0].as_f64().unwrap() as f32, v[1].as_f64().unwrap() as f32]);
-                    sim.step(a, &rows, req.get("ticks").and_then(Value::as_u64).unwrap_or(1) as u32, frame);
+                    let ticks = req.get("ticks").and_then(Value::as_u64).unwrap_or(1) as usize;
+                    if req.get("tick_frames").and_then(Value::as_bool).unwrap_or(false) {
+                        // each tick's frame row after the inputs: the ticks one at a time
+                        let at = nc * TICK_CAR;
+                        for t in 0..ticks {
+                            let row: [f32; TICK_FRAME] = f[at + t * TICK_FRAME..at + (t + 1) * TICK_FRAME].try_into().unwrap();
+                            sim.step_tick(a, &rows, &row);
+                        }
+                    } else {
+                        let frame = req.get("frame").and_then(Value::as_array).map(|v| [v[0].as_f64().unwrap() as f32, v[1].as_f64().unwrap() as f32]);
+                        sim.step(a, &rows, ticks as u32, frame);
+                    }
                 }
                 let mut out = vec![[0f32; BODY]; nc + 1];
                 sim.bodies(a, &mut out);

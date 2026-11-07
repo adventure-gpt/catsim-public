@@ -12,7 +12,7 @@ use rlmax::cpu::{self, flags, Arena, ArenaData, BallState, BodyState, CarState, 
 use rlmax::driver::{Buffer, Device};
 use rlmax::gpu::{GpuArenaData, GpuBatch};
 use serde_json::{Value, json};
-use simbench_kit::{BODY, CarSpec, Hello, Sim, TICK_CAR, b, f, has, serve, v3_from_packet};
+use simbench_kit::{BODY, CarSpec, Hello, Sim, TICK_CAR, TICK_FRAME, b, f, has, serve, v3_from_packet};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -39,9 +39,55 @@ fn arr(v: &Value) -> [f32; 3] {
     simbench_kit::v3(v)
 }
 
+/// uu that RLMAX's set-state (/ 50) turns into exactly these Bullet words, where such a float exists.
+fn uu_of_bt(w: f32) -> f32 {
+    let u = w * 50.0;
+    if u / 50.0 == w {
+        return u;
+    }
+    let (mut up, mut dn) = (u, u);
+    for _ in 0..4 {
+        up = up.next_up();
+        dn = dn.next_down();
+        if up / 50.0 == w {
+            return up;
+        }
+        if dn / 50.0 == w {
+            return dn;
+        }
+    }
+    u
+}
+
 fn body(c: &Value) -> BodyState {
     let (fw, rt, up) = if has(c, "fwd") { (arr(&c["fwd"]), arr(&c["right"]), arr(&c["up"])) } else { ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]) };
-    BodyState { pos: arr(&c["pos"]), rot: [fw[0], fw[1], fw[2], rt[0], rt[1], rt[2], up[0], up[1], up[2]], vel: arr(&c["vel"]), ang_vel: arr(&c["ang_vel"]) }
+    let mut s = BodyState { pos: arr(&c["pos"]), rot: [fw[0], fw[1], fw[2], rt[0], rt[1], rt[2], up[0], up[1], up[2]], vel: arr(&c["vel"]), ang_vel: arr(&c["ang_vel"]) };
+    // the game's own Bullet words (a float-precision game): position and velocity through RLMAX's own / 50, exactly
+    if let Some(w) = c.get("body_bt").and_then(Value::as_array) {
+        let g = |k: usize| w[k].as_f64().unwrap_or(0.0) as f32;
+        s.pos = [uu_of_bt(g(0)), uu_of_bt(g(1)), uu_of_bt(g(2))];
+        s.vel = [uu_of_bt(g(12)), uu_of_bt(g(13)), uu_of_bt(g(14))];
+    }
+    s
+}
+
+/// The basis of a `body_bt` (origin, basis by rows, ...) for RLMAX's exact basis setter, which takes it by columns
+/// (forward, right, up, as its bodies hold the rotation).
+fn basis_bt(c: &Value) -> Option<[f32; 9]> {
+    let w = c.get("body_bt").and_then(Value::as_array)?;
+    let mut m = [0f32; 9];
+    for r in 0..3 {
+        for k in 0..3 {
+            m[k * 3 + r] = w[3 + r * 3 + k].as_f64().unwrap_or(0.0) as f32;
+        }
+    }
+    Some(m)
+}
+
+/// A state that only moves bodies or leaves cars out (the harness's flow mid-game: a respawn, a float-precision
+/// sync): everything else stays as the arena has it.
+fn partial(st: &Value) -> bool {
+    st["cars"].as_array().is_some_and(|cs| cs.iter().any(|c| c.is_null() || !has(c, "boost")))
 }
 
 fn car_state(c: &Value, team: u32, preset: u32, next: Option<&Value>) -> CarState {
@@ -112,11 +158,12 @@ impl Sim for Rlmax {
             about: "RLMAX over its crate: GpuBatch::decide on the card for speed, its CPU build for accuracy".into(),
             device: "gpu",
             units: "bt",
-            caps: json!({"levels": ["packet", "v3"], "frame_timing": false, "game_flow": false, "rng_stream": false, "spot_choices": false, "threads": true, "actions": true}),
+            caps: json!({"levels": ["packet", "v3"], "frame_timing": false, "game_flow": false, "rng_stream": false, "spot_choices": false, "threads": true, "actions": true, "tick_frames": true}),
             choices: vec![
                 "speed: GpuBatch::decide (one action-table row per car, 8 ticks) then extract into a device buffer; arenas whose ball goes in reset (its training path)".into(),
                 "accuracy: its CPU build, cpu::Arena::from_physical with every CarState field the level gives; manifolds, broadphase pairs and pad timers start empty".into(),
                 "its full-state loader (the suite's level A) is a test-only feature of its crate, not used here".into(),
+                "whole games: a start (every car given) through from_physical; a respawn or a float-precision sync through set_car / set_ball onto the arena's own state, the game's basis words through set_body_basis; each tick's render fraction through set_pad_frame_fraction".into(),
             ],
         }
     }
@@ -136,6 +183,37 @@ impl Sim for Rlmax {
         ra.pads_from_recording = b(st, "pads_from_recording");
         let cars = st["cars"].as_array().ok_or("state needs cars")?;
         let next = st.get("next_controls").and_then(Value::as_array);
+        if partial(st) {
+            // set what is given, onto the arena's own state (contacts, broadphase and pad timers kept)
+            for (i, c) in cars.iter().enumerate() {
+                if c.is_null() {
+                    continue;
+                }
+                let mut s = ra.a.car(i as u32);
+                if has(c, "boost") {
+                    s = car_state(c, ra.teams[i], ra.presets[i], next.and_then(|n| n.get(i)));
+                } else {
+                    s.body = body(c);
+                }
+                ra.a.set_car(i as u32, &s);
+                if let Some(m) = basis_bt(c) {
+                    ra.a.set_body_basis(i as u32, &m, None);
+                }
+            }
+            let bl = &st["ball"];
+            let cur = ra.a.ball();
+            let mut bs = ball_state(bl);
+            if !has(bl, "asleep") {
+                // not given: the ball sleeps or not as the arena has it
+                bs.sleeping = cur.sleeping;
+                bs.deactivation_time = cur.deactivation_time;
+            }
+            ra.a.set_ball(&bs);
+            if let Some(m) = basis_bt(bl) {
+                ra.a.set_body_basis(cars.len() as u32, &m, None);
+            }
+            return Ok(());
+        }
         let cs: Vec<CarState> = cars.iter().enumerate().map(|(i, c)| car_state(c, ra.teams[i], ra.presets[i], next.and_then(|n| n.get(i)))).collect();
         ra.a = Arena::from_physical(self.data(), &ball_state(&st["ball"]), &cs);
         Ok(())
@@ -159,6 +237,14 @@ impl Sim for Rlmax {
                 }
             }
         }
+    }
+
+    fn step_tick(&self, ra: &mut RArena, inp: &[[f32; TICK_CAR]], row: &[f32; TICK_FRAME]) {
+        // the game tests boost pads once per rendered frame, at its render fraction (negative: an earlier tick of it)
+        if row[3].is_finite() {
+            ra.a.set_pad_frame_fraction(row[3].min(1.0));
+        }
+        self.step(ra, inp, 1, None);
     }
 
     fn bodies(&self, ra: &RArena, out: &mut [[f32; BODY]]) {
