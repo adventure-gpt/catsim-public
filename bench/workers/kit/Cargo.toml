@@ -1,0 +1,10 @@
+[package]
+name = "simbench_kit"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+description = "simbench worker kit: the harness's wire protocol and benchmark loops for simulators with a Rust API"
+
+[dependencies]
+serde_json = "1"

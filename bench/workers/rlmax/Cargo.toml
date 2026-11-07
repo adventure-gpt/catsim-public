@@ -1,0 +1,23 @@
+[package]
+name = "simbench_rlmax"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+description = "simbench worker: RLMAX over its crate (needs a CUDA toolkit and RLMAX_CUDA_PATH)"
+
+[[bin]]
+name = "simbench-rlmax"
+path = "src/main.rs"
+
+[dependencies]
+simbench_kit = { path = "../kit" }
+rlmax = { git = "https://github.com/akaAMAZING/RLMAX", rev = "df9b37b73b7a4ef6154af4b3cfe42cc8ae0ac6a3" }
+serde_json = "1"
+
+[workspace]
+
+# RLMAX's own release settings (its workspace Cargo.toml)
+[profile.release]
+codegen-units = 1
+lto = "thin"

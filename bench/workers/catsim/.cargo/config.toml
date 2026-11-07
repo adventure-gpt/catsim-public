@@ -1,0 +1,4 @@
+# catSim's own CPU level (engine/.cargo/config.toml): x86-64-v2, the legacy SSE encoding; AVX encodings change a NaN's
+# sign bit in one solver path, so catSim never uses them.
+[build]
+rustflags = ["-C", "target-cpu=x86-64-v2"]

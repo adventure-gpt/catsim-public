@@ -21,7 +21,10 @@ arena.set_goal_score_callback(fn, data)         # fn(arena, scoring_team, data)
 arena.set_car_bump_callback(fn, data)           # fn(arena, bumper, victim, is_demo, data)
 arena.set_car_ball_collision_callback(fn, data) # fn(arena, car, data)
 arena.ball_prediction(ticks=360, every=1)       # catSim extra: list of BallState
-arena.clone()
+arena.clone()                                   # same cars and states, hidden state included
+arena.copy()                                    # catSim extra: an exact copy (contact caches and all)
+car.get_hidden(), car.set_hidden(h)             # catSim extra: the hidden state (below)
+car.get_body(), car.set_body(b)                 # catSim extra: the body exactly, in Bullet units
 ```
 
 Types: `Vec`, `RotMat`, `Angle`, `CarControls`, `CarState`, `BallState`, `BoostPad`, `BoostPadState`,
@@ -68,6 +71,87 @@ Car configs: `CarConfig.OCTANE`, `DOMINUS`, `PLANK`, `BREAKOUT`, `HYBRID`, `MERC
 handling preset names (`"Octane_Skunkz"`, `"LongCar_hero"`...) or a car body's name or product id
 (`"Venom"`, `"23"`). `rs._lib().preset_names()` and `body_names()` list them.
 
+## Hidden state: restoring a recorded or saved state exactly
+
+A packet shows where a car is and how it moves. The next ticks also read what it doesn't show: the jump and dodge
+clocks, the input the car still holds, its wheels' contacts, the gates that stop a second ball hit or bump too soon.
+catSim lets you read and set all of it, so a state you save (or one recorded from the game) can be put back exactly.
+
+```python
+s = car.get_state()                 # s.hidden is filled in: a CarHidden
+car.set_state(s)                    # position, rotation, velocities, boost, then s.hidden when present
+
+h = car.get_hidden()                # the hidden state alone
+h.jump.active, h.jump.time          # each game component: on or off, and seconds since it changed
+car.set_hidden(h)
+
+b = car.get_body()                  # the body exactly as the physics holds it: Bullet units (1 = 50 uu), the
+car.set_body(b)                     # rotation matrix by rows, no rounding anywhere; arena.ball.get_body() / set_body()
+
+twin = arena.copy()                 # an exact copy: bodies, contact caches, every timer; stepping both gives the same
+arena.get_round(), arena.set_round(r)   # the physics frame, the round's phase and timers, the score
+pad.get_timer(), pad.set_timer(taken, length, elapsed)   # a boost pad's timer exactly; pad.set_state(BoostPadState)
+```
+
+`CarHidden` holds, with the game's meanings:
+
+| Field | What it is |
+|---|---|
+| `driving` | the car takes input (off during a countdown and after a goal) |
+| `on_ground`, `supersonic`, `supersonic_time` | the game's flags; seconds below supersonic speed while still counted supersonic |
+| `jumped`, `double_jumped` | the game's own jump flags (set by a jump, a double jump or a dodge; cleared on landing) |
+| `jump`, `jump_released` | the jump component, and whether the button was let go during it |
+| `double_jump`, `dodge`, `auto_flip`, `boost`, `air_control` | the other components: `active` and `time` |
+| `dodge_torque`, `dodge_direction` | the dodge's whole-number torque and its direction; `car.dodge_from_input(forward, right)` gives both the game's way |
+| `auto_flip_right`, `auto_flip_duration` | the automatic flip back onto the wheels |
+| `boost_amount` | boost 0 to 1, exactly (a packet shows it times 100, rounded) |
+| `handbrake` | the smoothed handbrake, 0 to 1 |
+| `held_input` | the controls the car holds from its last tick (axes as the game stores them, 8 bits each) |
+| `wheels`, `world_contact`, `world_contact_normal` | each wheel's contact and normal; the body's contact with the arena |
+| `bump_victim`, `bump_time` | the car it last bumped and when (physics time); the same car can be bumped again 0.25 s later |
+| `ball_impact_frame`, `ball_touch_frame` | the physics frame of its last ball hit with the extra impulse, and of its last touch |
+
+More for setting up a start: `car.demolish_now(respawn_in)`, `car.queue_respawn(pos, rotator)`,
+`arena.queue_kickoff(spots)`, `car.set_driving(on)`, `car.add_boost(amount)`, `arena.ball.set_held(on)`,
+`arena.set_pad_rule(on)` (off: pads change only when you say), `arena.use_game_countdown()` (later kickoffs run the
+game's own 3-second countdown clock). The Rust API has the same in `catsim::game::hidden`.
+
+**What can't be set:** the contact manifolds' cached points (where a body touched something last tick) and the
+broadphase's pair order. catSim makes both again at the first tick. A state copied from a car on its wheels or in the
+air, or a ball in the air, runs on identically (tests/test_hidden.py checks this); one with a cached contact can drift
+by float steps. `arena.copy()` keeps everything, caches included.
+
+### RocketSim v3's CarState in catSim's terms
+
+For tools that hold states in RocketSim v3's names (its rlpr_metric, the full-state suite's public rows):
+
+| v3 field | catSim |
+|---|---|
+| `phys` (pos, rot_mat, vel, ang_vel) | the body: `set_body` with position x 0.02, the matrix by rows, velocity x 0.02 |
+| `is_on_ground`, `is_supersonic`, `supersonic_grace_timer` | `on_ground`, `supersonic`, `supersonic_time` |
+| `has_jumped` / `has_double_jumped`, `has_flipped` | `jumped` (any of the three) / `double_jumped` (double jump or flip) |
+| `is_jumping`, `jump_ticks`, `jump_hold_broken` | `jump.active`, `jump.time = jump_ticks / 120` (`air_time_since_jump` when not jumping), `jump_released` |
+| `is_flipping`, `flip_time`, `flip_rel_torque` (x, y) | `dodge.active`, `dodge.time`, torque (round(side torque x), round(forward torque y)) and direction (y, -x) |
+| `is_auto_flipping`, `auto_flip_timer`, `auto_flip_torque_scale` | `auto_flip.active`, the time left as its duration, `auto_flip_right` from the sign |
+| `boost` (0-100), `is_boosting`, `boosting_time`, `time_since_boosted` | `boost_amount / 100`; `boost.active`; `boost.time` (the first while boosting, the second when not) |
+| `handbrake_val`, `prev_controls` / `controls` | `handbrake`, `held_input` |
+| `wheels_with_contact` (v3's order: front left, front right, back left, back right) | `wheels` (catSim's order swaps left and right: 1, 0, 3, 2) |
+| `bump_cooldown_timer`, `bump_cooldown_victim` | `bump_victim`, `bump_time = now - (0.25 - timer)` |
+| `last_extra_hit_tick` | `ball_impact_frame`, the same number of frames before `arena.physics_frame` |
+| `is_demoed`, `demo_respawn_timer` | `car.demolish_now(timer)` |
+| `air_time` | no counterpart (not read by the game's physics) |
+
+bench/adapters/catsim_py.py does exactly this, and is a working example.
+
+### Replaying a recording from its start
+
+To start from a real game's own kickoff (the benchmarks' levels C and D, docs/BENCHMARKS.md), the native arena takes
+a few more calls: `NativeArena(..., kickoff=False, countdown_ticks=n)` skips catSim's own kickoff, then
+`start_at_drop(spots)` / `restart(spots, steps)` build the bodies at given spots, `set_next_handles(order)` the
+broadphase handles, `set_birth_delay`, `set_countdown(...)`, `set_spawn_selector(...)` the game's kickoff spot choice,
+`set_match_seconds`, `round_gate`, `set_scripted`, and `packet_view()` / `clock()` read what a packet would show.
+bench/simbench/game.py and bench/adapters/catsim_py.py (`game`) use them.
+
 ## Differences from RocketSim
 
 | Topic | RocketSim | catSim | Why |
@@ -86,8 +170,8 @@ handling preset names (`"Octane_Skunkz"`, `"LongCar_hero"`...) or a car body's n
 | `car.demolish()` | Available | Not available | Demolitions happen only through the game's rules |
 | `get_gym_state()` and other array helpers | Some bindings have them | Not yet | |
 | Ball prediction | Clone an arena and step it | `arena.ball_prediction()` (a ball-only arena, cars left out) | |
-| Speed | Very fast | Slower: exactness costs time | See docs/ACCURACY.md |
-| Car state fields | Many | The common ones (see `CarState`) | Others to come as asked for |
+| Speed | Very fast | Slower: exactness costs time | Measured side by side in docs/BENCHMARKS.md |
+| Car state fields | Many, set through `set_state` | The common ones in `CarState`, the rest in `CarState.hidden` / `CarHidden` (above) | catSim's fields follow the game; the table above maps v3's |
 
 Determinism: the same arena, states and controls always give the same result, bit for bit, on Windows and
 Linux. Threads are not used inside an arena.

@@ -1,0 +1,25 @@
+[package]
+name = "simbench_rocketsim_v3"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+description = "simbench worker: RocketSim v3 (the rocketsim crate from crates.io), native"
+
+[[bin]]
+name = "simbench-rocketsim-v3"
+path = "src/main.rs"
+
+[dependencies]
+simbench_kit = { path = "../kit" }
+rocketsim = "=0.3.5"
+glam = "0.34"
+serde_json = "1"
+
+[workspace]
+
+# RocketSim's own release settings (its workspace Cargo.toml)
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"

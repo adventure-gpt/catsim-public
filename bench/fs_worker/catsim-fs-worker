@@ -1,0 +1,5 @@
+#!/bin/sh
+# catSim as a worker for the full-state suite's own RocketSim v3 harness (score_v3.py): docs/BENCHMARKS.md.
+# Needs CATSIM_DATA (catSim's dumper output). Any other simbench simulator: python3 -m simbench.fs_worker NAME.
+here=$(cd "$(dirname "$0")" && pwd)
+PYTHONPATH="$here/..${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m simbench.fs_worker catsim
