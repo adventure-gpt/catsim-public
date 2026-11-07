@@ -280,7 +280,7 @@ def run(names, setup_env, data: Path, levels, splits, limit, jobs, log_dir, emit
     man = json.loads(man_path.read_text())["recordings"]
     split_of = {x["name"]: x["split"] for x in man}
     want = None if splits == "all" else set(splits.split(","))
-    recs = [x["name"] for x in man if (want is None or x["split"] in want) and (folder / (x["name"] + ".npz")).is_file()]
+    recs = [x["name"] for x in man if (want is None or x["split"] in want or x["name"] in want) and (folder / (x["name"] + ".npz")).is_file()]
     if limit:
         recs = recs[:limit]
     levels = [x.strip() for x in (levels or "A,B,Bp").split(",") if x.strip() in LEVEL_NAME]
