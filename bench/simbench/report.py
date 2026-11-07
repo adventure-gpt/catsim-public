@@ -118,6 +118,9 @@ def cell(level: str, r: dict | None, peers: list, notes: Notes, main_when: str |
     if r.get("status") != "ok":
         return r.get("status", "not run") + notes.mark(f"{who}, {LEVELS[level][0]}: {r.get('why', '')}.")
     marks = ""
+    if r.get("binding"):
+        marks += notes.mark(f"{who}, {LEVELS[level][0]}: through {nice(r['binding'])} ({r.get('version', '')}), the "
+                            "binding that runs this level.")
     if main_when and r.get("when") and r["when"][:10] != main_when[:10]:
         marks += notes.mark(f"{who}, {LEVELS[level][0]}: from the run of {r['when'].replace('T', ' ')}.")
     if level in ("A", "B", "Bp"):
@@ -142,8 +145,20 @@ def cell(level: str, r: dict | None, peers: list, notes: Notes, main_when: str |
             + (f" / {e:.2f} at 5 s" if e is not None else "") + marks)
 
 
+# One simulator, two bindings: the summary shows one column, the native worker's result where it has one and the
+# other binding's where only that one runs the level (footnoted). The detail tables keep both.
+SAME = {"catsim-py": "catsim"}
+
+
 def summary_table(recs, notes: Notes) -> list[str]:
     acc = acc_rows(recs)
+    for (s, lv), r in list(acc.items()):
+        main = SAME.get(s)
+        if main:
+            have = acc.get((main, lv))
+            if r.get("status") == "ok" and (have is None or have.get("status") != "ok"):
+                acc[(main, lv)] = dict(r, binding=s)
+            del acc[(s, lv)]
     sims_all = sim_sort({k[0] for k in acc})
     levels = [lv for lv in ("A", "B", "Bp", "rlpr", "C", "D") if any(k[1] == lv for k in acc)]
     if not levels:
