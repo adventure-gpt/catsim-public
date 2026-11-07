@@ -5,11 +5,12 @@
     python -m simbench rlpr        --sims catsim                       (RocketSim's own rlpr_metric, our bridge)
     python -m simbench recordings  --sims catsim                       [--levels C,D]
     python -m simbench all         --sims ...                          (every benchmark the simulators support)
-    python -m simbench report                                          (the tables and charts from bench_results/)
+    python -m simbench report      [--doc ../docs/BENCHMARKS.md]       (rebuild the report from bench_results/)
     python -m simbench check       --sims mine=path/to/adapter.py      (a quick test of a new adapter)
     python -m simbench build       catsim                              (build a native worker; done on first use)
 
-Common options: --data DIR (catSim's dumper output; default $CATSIM_DATA or ./catsim_data), --meshes DIR (RocketSim's
+Every benchmark ends by writing bench_results/report.md, report.html (open it in a browser) and the charts, and printing
+the summary table. Common options: --data DIR (catSim's dumper output; default $CATSIM_DATA or ./catsim_data), --meshes DIR (RocketSim's
 collision_meshes; default: made from --data), --out DIR (default ./bench_results), --threads N (default: all).
 """
 from __future__ import annotations
@@ -76,9 +77,10 @@ def main(argv=None) -> None:
     ap.add_argument("--only", help="(speed) only these rows, as mode:arenas:threads[,...] (e.g. 3v3:1024:16)")
     ap.add_argument("--suite-data", help="(suite) the full-state suite's data folder (its README says how to get it)")
     ap.add_argument("--levels", help="accuracy levels to run (default: all the benchmark has)")
-    ap.add_argument("--splits", default="all", help="(suite) which of its splits")
+    ap.add_argument("--splits", default="all", help="(suite) which of its splits, or recording names")
     ap.add_argument("--limit", type=int, default=0, help="(suite, recordings) at most this many recordings (a quick look)")
     ap.add_argument("--jobs", type=int, default=0, help="(suite, recordings) worker processes per simulator (default: threads / 2)")
+    ap.add_argument("--doc", help="(report) also fill this docs/BENCHMARKS.md's generated sections")
     a = ap.parse_args(argv)
     names = [s.strip() for s in a.sims.split(",") if s.strip()]
     out = Path(a.out)
@@ -88,7 +90,7 @@ def main(argv=None) -> None:
         return
     if a.bench == "report":
         from . import report
-        report.main(out)
+        report.main(out, Path(a.doc) if a.doc else None)
         return
     env = setup_env(a)
     m = machine.describe()
@@ -118,7 +120,9 @@ def main(argv=None) -> None:
         elif b == "recordings":
             from . import recordings
             recordings.run(names, env, a.levels, a.limit, a.jobs or max(1, a.threads // 2), out, res.emit)
-    print(f"results: {out / 'results.jsonl'}  (python -m simbench report)")
+    print(f"results: {out / 'results.jsonl'}")
+    from . import report
+    report.main(out, quiet=True)
 
 
 if __name__ == "__main__":

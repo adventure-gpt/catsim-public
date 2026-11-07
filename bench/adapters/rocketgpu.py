@@ -16,6 +16,7 @@ mutator config, pad credits on the boost field, bodies read from the full state 
 from __future__ import annotations
 
 import ctypes
+import math
 import os
 import struct
 import subprocess
@@ -210,11 +211,11 @@ class RocketGPU(Adapter):
         n = int(req["ticks"])
         out = np.zeros((n, a["n"] + 1, 18), np.float32)
         for t in range(n):
-            self.step(a, inputs[t], 1, None if frames is None else frames[t], hold=not req["start"].get("timer_hold"))
+            self.step(a, inputs[t], 1, None if frames is None else frames[t], hold=not req["start"].get("timer_hold"), first=t == 0)
             out[t] = self.bodies(a)
         return out
 
-    def step(self, arena, inputs, ticks=1, frame=None, hold=True):
+    def step(self, arena, inputs, ticks=1, frame=None, hold=True, first=False):
         a = arena["a"]
         st = self._fields(arena)
         new = {}
@@ -231,11 +232,18 @@ class RocketGPU(Adapter):
         if new:
             a.set_full_state({k: bytes(v) for k, v in new.items()})
         if frame is not None:
+            # as the suite's own runner gives it: the frame's start time on every tick but a segment's first (its start
+            # state already holds that frame), the render fraction only when it was recorded
             m = a.get_mutator_config()
-            if m.frame_start_dt != float(frame[4]):
-                m.frame_start_dt = float(frame[4])
-            m.boost_pad_frame_frac = float(frame[3])
-            a.set_mutator_config(m)
+            start_dt = -1.0 if first else float(frame[4])
+            frac = float(frame[3])
+            changed = m.frame_start_dt != start_dt
+            if changed:
+                m.frame_start_dt = start_dt
+            if not math.isnan(frac):
+                m.boost_pad_frame_frac = frac
+            if changed or not math.isnan(frac):
+                a.set_mutator_config(m)
         for car, r in zip(arena["cars"], inputs):
             c = self.rs.CarControls()
             c.throttle, c.steer, c.pitch, c.yaw, c.roll = (float(x) for x in r[:5])

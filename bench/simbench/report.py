@@ -1,14 +1,23 @@
-"""The results as tables (bench_results/report.md) and charts (bench_results/charts/*.png, a light and a dark version).
+"""The finished, readable result: bench_results/report.md, a self-contained report.html (light and dark) and the charts
+(bench_results/charts/*.png, a light and a dark version).
 
-    python -m simbench report [--out bench_results]
+    python -m simbench report [--out bench_results] [--doc ../docs/BENCHMARKS.md]
 
-Every table says what each simulator was given and what was scored, and lists every simulator that was run on this
-machine, with "not supported" or "not run" said plainly. Charts need matplotlib (`pip install matplotlib`); without it the
-tables are still written.
+Every benchmark command writes it when it ends and prints the summary table; `report` rebuilds it from results.jsonl at
+any time. It leads with one summary table (a row per accuracy level, saying what the simulator was given; a column per
+simulator), then the speed tables (CPU and GPU apart), then the details. Footnotes are made from the results: a
+simulator scored on fewer segments than the others, a "not supported" reason, the assists a simulator got, numbers from
+another run or machine. `--doc` fills the generated sections of docs/BENCHMARKS.md with the same text, so the published
+page is exactly what anyone's own run writes. Charts need matplotlib; without it the tables are still written.
 """
 from __future__ import annotations
 
+import base64
+import html
 import json
+import re
+import shutil
+from collections import Counter
 from pathlib import Path
 
 ORDER = ["catsim", "catsim-py", "rocketsim-v3", "rocketsim-v2", "rocketgpu-cpu", "rocketgpu", "rlmax"]
@@ -19,24 +28,34 @@ LIGHT = ["#2a78d6", "#6250d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008
 DARK = ["#3987e5", "#9085e9", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"]
 
 LEVELS = {
-    "A": ("A. Physics only", "the game's full internal state at each segment's start (bodies, contact caches, broadphase, every "
-          "timer), then the recorded controls and frame timing"),
-    "B": ("B. From the public state", "RocketSim v3's CarState and BallState at each segment's start (what a packet shows plus "
-          "v3's own timers: physics + guessing the hidden state), then the recorded controls and frame timing"),
-    "Bp": ("B, packet fields only", "only the fields an RLBot packet lists at each segment's start (physics + guessing more of "
-           "the hidden state), then the recorded controls and frame timing"),
-    "C": ("C. Whole game, random choices given", "the state at the first kickoff, then only the recorded controls, frame timing "
-          "and the game's random choices (each kickoff and respawn spot)"),
-    "D": ("D. Whole game, random stream given", "the state at the first kickoff, the recorded controls and frame timing, and the "
-          "random stream's starting state: the simulator picks every kickoff and respawn spot itself"),
+    "A": ("A. Physics only", "full internal state given",
+          "the game's full internal state at each segment's start (bodies, contact memory, broadphase, every timer), then "
+          "the recorded controls and frame timing"),
+    "B": ("B. From the public state", "public state given (physics + guessing the hidden state)",
+          "RocketSim v3's CarState and BallState at each segment's start (what a packet shows plus v3's own timers), then "
+          "the recorded controls and frame timing"),
+    "Bp": ("B, packet fields only", "only the packet's fields given (physics + guessing more)",
+           "only the fields an RLBot packet lists at each segment's start, then the recorded controls and frame timing"),
+    "rlpr": ("RocketSim's rlpr_metric", "an RLPR tick record given (RocketSim's own test)",
+             "an RLPR tick record at each 120-tick segment's start (bodies, jump and flip state and clocks, flip torque, "
+             "boost, wheel contacts and normals, held controls; no contact history, no frame timing), then the recorded "
+             "controls"),
+    "C": ("C. Whole game, random choices given", "the first kickoff and the game's random choices given",
+          "the state at the first kickoff, then only the recorded controls, frame timing and the game's random choices "
+          "(each kickoff and respawn spot); a simulator without its own match flow gets it from the harness"),
+    "D": ("D. Whole game, random stream given", "the first kickoff and the random stream's state given",
+          "the state at the first kickoff, the recorded controls and frame timing, and the random stream's starting "
+          "state: the simulator picks every kickoff and respawn spot itself"),
 }
 SUITE_SCORED = ("every car and the ball every tick (up to 120 ticks a segment): bit-exact position, velocity, angular "
                 "velocity and rotation; the suite's normalized error (pos/2 uu, vel/3 uu/s, ang vel/0.05, axes/0.05)")
+GEN = "<!-- simbench:{} (generated by python -m simbench report; edit report.py, not this) -->"
+END = "<!-- /simbench:{} -->"
 
 
 def load(out: Path) -> list:
     recs = []
-    for p in sorted(out.glob("**/results.jsonl")):
+    for p in sorted(Path(out).glob("**/results.jsonl")):
         for line in p.read_text(encoding="utf-8").splitlines():
             try:
                 recs.append(json.loads(line))
@@ -64,122 +83,84 @@ def fmt_k(x):
     return f"{x / 1e6:.2f}M" if x >= 1e6 else f"{x / 1e3:.0f}k"
 
 
-def speed_tables(recs) -> list[str]:
-    sp = [r for r in recs if r.get("kind") == "speed"]
-    if not sp:
-        return []
-    out = []
-    last = latest(sp, lambda r: (r["sim"], r.get("mode"), r.get("arenas"), r.get("threads")))
-    for device in ("cpu", "gpu"):
-        rows = [r for r in last.values() if r.get("device", "cpu") == device and r.get("mode")]
-        if not rows:
-            continue
-        sims_here = sim_sort({r["sim"] for r in rows})
-        m = rows[0]["machine"]
-        hw = (", ".join(m.get("gpus") or []) or "GPU") if device == "gpu" else f"{m['cpu']}, {m['threads']} threads"
-        out.append(f"### Speed, {device.upper()} simulators ({hw}; {m['os'].split(' (')[0]})\n")
-        out.append("Arena-ticks per second, median of the rounds (the spread in brackets). Identical work for every simulator: "
-                   "the same start states and controls, 8 ticks per decision, every body read each decision.\n")
-        configs = sorted({(r["mode"], r["arenas"], r["threads"]) for r in rows}, key=lambda c: (c[0], c[1], c[2]))
-        out.append("| mode | arenas | threads | " + " | ".join(nice(s) for s in sims_here) + " |")
-        out.append("|---|---:|---:|" + "---:|" * len(sims_here))
-        for mode, arenas, threads in configs:
-            cells = []
-            for s in sims_here:
-                r = last.get((s, mode, arenas, threads))
-                if r is None:
-                    cells.append("not run")
-                elif r.get("status") == "ok":
-                    cells.append(f"{fmt_k(r['arena_ticks_per_s'])} ({fmt_k(r['min'])}-{fmt_k(r['max'])})")
-                else:
-                    cells.append(r.get("status", "?"))
-            out.append(f"| {mode} | {arenas} | {threads if device == 'cpu' else '-'} | " + " | ".join(cells) + " |")
-        out.append("")
-        out.append(versions([r for r in rows if r.get("status") == "ok"]))
-    not_run = [r for r in sp if r.get("status") == "not run"]
-    if not_run:
-        out.append("Not run here: " + "; ".join(f"{nice(r['sim'])} ({r.get('why', '')})" for r in latest(not_run, lambda r: r["sim"]).values()) + "\n")
-    return out
+def mline(m: dict) -> str:
+    return f"{m['cpu']}, {m['threads']} threads, {m['ram_gb']:g} GB RAM, {m['os'].split(' (')[0]}"
 
 
-def versions(rows) -> str:
-    seen = {}
-    for r in rows:
-        seen.setdefault(r["sim"], r)
-    lines = []
-    for s in sim_sort(seen):
-        r = seen[s]
-        ch = "; ".join(r.get("choices") or [])
-        lines.append(f"- **{nice(s)}**: {r.get('version') or '?'}. {r.get('about') or ''}" + (f" Adapter: {ch}." if ch else ""))
-    return "\n".join(lines) + "\n"
+class Notes:
+    """Footnotes, numbered in order of first use; the same text gets the same number."""
+
+    def __init__(self):
+        self.texts = []
+
+    def mark(self, text: str) -> str:
+        if text not in self.texts:
+            self.texts.append(text)
+        return f"<sup>{self.texts.index(text) + 1}</sup>"
+
+    def lines(self) -> list[str]:
+        return [f"{i + 1}. {t}" for i, t in enumerate(self.texts)]
 
 
-def accuracy_tables(recs) -> list[str]:
+def acc_rows(recs):
     acc = [r for r in recs if r.get("kind") == "accuracy"]
-    out = []
-    last = latest(acc, lambda r: (r["sim"], r["level"], r.get("suite")))
-    for level in ("A", "B", "Bp", "C", "D"):
-        rows = [r for r in last.values() if r["level"] == level]
-        if not rows:
-            continue
-        title, given = LEVELS[level]
-        for suite in sorted({r.get("suite") for r in rows}):
-            rs = [r for r in rows if r.get("suite") == suite]
-            out.append(f"### {title} ({suite})\n")
-            out.append(f"Given: {given}.  ")
-            if level in ("C", "D"):
-                out.append("Scored: every compared packet row to the end of the recording (positions, velocities, rotation, as "
-                           "the game rounds them); the first row that drifts.\n")
-                out.append("| simulator | recordings | exact to the end | packet rows exact | ticks |")
-                out.append("|---|---:|---:|---:|---:|")
-                for r in sorted(rs, key=lambda r: ORDER.index(r["sim"]) if r["sim"] in ORDER else 99):
-                    s = r.get("summary") or {}
-                    if r.get("status") != "ok":
-                        out.append(f"| {nice(r['sim'])} | {r.get('status')}: {r.get('why', '')} | | | |")
-                        continue
-                    out.append(f"| {nice(r['sim'])} | {s.get('recordings', '')} | {s.get('exact_to_the_end', '')} | "
-                               f"{s.get('exact_rows', 0):,} of {s.get('compared_rows', 0):,} | {s.get('ticks', 0):,} |")
-                assists = next((r.get("assists") for r in rs if r.get("assists")), None)
-                if assists:
-                    out.append("\nAssists (what the recording hands every simulator): " + "; ".join(assists) + ".")
-            else:
-                out.append(f"Scored: {SUITE_SCORED}.\n")
-                out.append("| simulator | exact body-ticks | exact segments | segment pass | mean error k1 / k30 / k120 | body-ticks |")
-                out.append("|---|---:|---:|---:|---|---:|")
-                for r in sorted(rs, key=lambda r: ORDER.index(r["sim"]) if r["sim"] in ORDER else 99):
-                    if r.get("status") != "ok":
-                        out.append(f"| {nice(r['sim'])} | {r.get('status')} | {r.get('why', '')} | | | |")
-                        continue
-                    s = r["summary"]["all"]
-                    me = s["mean_error"]
-                    out.append(f"| {nice(r['sim'])} | {s['exact_body_ticks']:.4f}% | {s['exact_segments']:.3f}% | {s['segment_pass']:.3f}% | "
-                               f"{me['1']:.4f} / {me['30']:.4f} / {me['120']:.4f} | {s['body_ticks']:,} |")
-            out.append("")
-            out.append(versions([r for r in rs if r.get("status") == "ok"]))
-    return out
+    rl = [dict(r, level="rlpr", suite="rlpr") for r in recs if r.get("kind") == "rlpr"]
+    return latest(acc + rl, lambda r: (r["sim"], r["level"]))
 
 
-def rlpr_table(recs) -> list[str]:
-    rl = [r for r in recs if r.get("kind") == "rlpr"]
-    if not rl:
+def cell(level: str, r: dict | None, peers: list, notes: Notes, main_when: str | None) -> str:
+    """One summary cell: exact / pass (or the level's equivalent), with footnotes."""
+    if r is None:
+        return "not run"
+    who = nice(r["sim"])
+    if r.get("status") == "not supported":
+        return "not supported" + notes.mark(f"{who}, {LEVELS[level][0]}: {r.get('why', 'its adapter cannot take this level')}.")
+    if r.get("status") != "ok":
+        return r.get("status", "not run") + notes.mark(f"{who}, {LEVELS[level][0]}: {r.get('why', '')}.")
+    marks = ""
+    if main_when and r.get("when") and r["when"][:10] != main_when[:10]:
+        marks += notes.mark(f"{who}, {LEVELS[level][0]}: from the run of {r['when'].replace('T', ' ')}.")
+    if level in ("A", "B", "Bp"):
+        a = r["summary"]["all"]
+        most = max((p["summary"]["all"]["body_ticks"] for p in peers if p.get("status") == "ok"), default=a["body_ticks"])
+        if a["body_ticks"] < most or a.get("failed_segments"):
+            marks += notes.mark(f"{who}, {LEVELS[level][0]}: scored on {a['body_ticks']:,} body-ticks of {most:,}"
+                                + (f" ({a['failed_segments']:,} segments failed in its worker)" if a.get("failed_segments") else "") + ".")
+        return f"{a['exact_body_ticks']:.2f}% / {a['segment_pass']:.2f}%{marks}"
+    if level == "rlpr":
+        a = r["results"]["segments_120"]["total"]
+        return f"{a['pass_pct']:.2f}% / {a['mean_norm']:.2f}{marks}"
+    s = r["summary"]
+    if s.get("bodies_only"):
+        marks += notes.mark(f"{who}, {LEVELS[level][0]}: the harness runs the match flow (kickoff starts and the countdown "
+                            "hold, restarts after goals, respawns where the recording has them, each frame's ticks); "
+                            "scored on bodies only, no boost or pads.")
+    if s.get("failed"):
+        marks += notes.mark(f"{who}, {LEVELS[level][0]}: {s['failed']} recordings failed in its worker.")
+    e = (s.get("error_after_kickoff") or {}).get("5.0")
+    return (f"{s['exact_to_the_end']}/{s['recordings']} games / {s['exact_pct']:.1f}% rows"
+            + (f" / {e:.2f} at 5 s" if e is not None else "") + marks)
+
+
+def summary_table(recs, notes: Notes) -> list[str]:
+    acc = acc_rows(recs)
+    sims_all = sim_sort({k[0] for k in acc})
+    levels = [lv for lv in ("A", "B", "Bp", "rlpr", "C", "D") if any(k[1] == lv for k in acc)]
+    if not levels:
         return []
-    out = ["### RocketSim's own replay metric (rlpr_metric, unchanged)\n",
-           "Given: an RLPR tick record at each 120-tick segment's start (bodies, jump and flip state and clocks, flip torque, "
-           "boost, wheel contacts and normals, held controls; no contact history), then the recorded controls; or one tick "
-           "from every record (one-tick).  Scored: RocketSim's own normalized error per car-tick, its own tolerances "
-           "(pass = error under 1).\n",
-           "| simulator | 120-tick pass | 120-tick mean norm | one-tick pass | one-tick mean norm | car-ticks |",
-           "|---|---:|---:|---:|---:|---:|"]
-    for r in sorted(latest(rl, lambda r: r["sim"]).values(), key=lambda r: ORDER.index(r["sim"]) if r["sim"] in ORDER else 99):
-        if r.get("status") != "ok":
-            out.append(f"| {nice(r['sim'])} | {r.get('status')} | {r.get('why', '')} | | | |")
-            continue
-        a, b = r["results"]["segments_120"]["total"], r["results"]["one_tick"]["total"]
-        out.append(f"| {nice(r['sim'])} | {a['pass_pct']:.3f}% | {a['mean_norm']:.4f} | {b['pass_pct']:.3f}% | {b['mean_norm']:.4f} | {a['support']:,} |")
+    whens = Counter(r.get("when", "")[:10] for r in acc.values() if r.get("status") == "ok")
+    main_when = whens.most_common(1)[0][0] if whens else None
+    out = ["| given | " + " | ".join(nice(s) for s in sims_all) + " |", "|---|" + "---|" * len(sims_all)]
+    for lv in levels:
+        peers = [r for k, r in acc.items() if k[1] == lv]
+        cells = [cell(lv, acc.get((s, lv)), peers, notes, main_when) for s in sims_all]
+        out.append(f"| **{LEVELS[lv][0].split('. ')[0]}**: {LEVELS[lv][1]} | " + " | ".join(cells) + " |")
+    out.append("")
+    out.append("Each cell: levels A and B, bit-exact body-ticks / segment pass; rlpr_metric, its pass rate / mean "
+               "normalized error over 120-tick segments; levels C and D, games exact to the end / packet rows exact / the "
+               "normalized error 5 s after each kickoff (0 is exact).")
     out.append("")
     return out
-
-
 def charts(recs, out: Path) -> list[Path]:
     try:
         import matplotlib
@@ -283,100 +264,274 @@ def charts(recs, out: Path) -> list[Path]:
     return made
 
 
-def summary_table(recs) -> list[str]:
-    """One row per measure, one column per simulator: the headline numbers of every benchmark that was run."""
-    sims_all = sim_sort({r["sim"] for r in recs if r.get("sim")})
-    sims_all = [s for s in sims_all if s != "catsim-py"] + (["catsim-py"] if "catsim-py" in sims_all else [])
-    rows = []
-    sp = latest([r for r in recs if r.get("kind") == "speed"], lambda r: (r["sim"], r.get("mode"), r.get("arenas"), r.get("threads")))
-    big = [r for r in sp.values() if r.get("status") == "ok" and r.get("device", "cpu") == "cpu" and r.get("arenas") == 1024]
-    if big:
-        t = big[0]["threads"]
-        for mode in ("1v1", "3v3"):
-            cells = []
-            for s in sims_all:
-                r = sp.get((s, mode, 1024, t))
-                dev = next((x.get("device") for x in sp.values() if x["sim"] == s and x.get("device")), "cpu")
-                cells.append(fmt_k(r["arena_ticks_per_s"]) if r and r.get("status") == "ok" else ("GPU simulator" if dev == "gpu" else "-"))
-            rows.append((f"CPU speed, {mode}, 1,024 arenas, {t} threads (arena-ticks/s)", cells))
-        for mode in ("1v1", "3v3"):
-            cells = []
-            for s in sims_all:
-                r = sp.get((s, mode, 1, 1))
-                cells.append(fmt_k(r["arena_ticks_per_s"]) if r and r.get("status") == "ok" else "-")
-            rows.append((f"CPU speed, {mode}, one arena, one thread", cells))
-    gpu = [r for r in sp.values() if r.get("status") == "ok" and r.get("device") == "gpu"]
-    if gpu:
-        n = max(r["arenas"] for r in gpu)
-        for mode in ("1v1", "3v3"):
-            cells = []
-            for s in sims_all:
-                r = sp.get((s, mode, n, 1))
-                cells.append(fmt_k(r["arena_ticks_per_s"]) if r and r.get("status") == "ok" else "-")
-            rows.append((f"GPU speed, {mode}, {n:,} arenas", cells))
-    acc = latest([r for r in recs if r.get("kind") == "accuracy"], lambda r: (r["sim"], r["level"], r.get("suite")))
-    for level, label in (("A", "A. physics only: exact body-ticks / segment pass"), ("B", "B. public state: exact body-ticks / segment pass"),
-                         ("Bp", "B, packet fields only: exact / pass")):
-        if not any(k[1] == level for k in acc):
-            continue
-        cells = []
-        for s in sims_all:
-            r = acc.get((s, level, "full-state suite"))
-            if r is None:
-                cells.append("-")
-            elif r.get("status") != "ok":
-                cells.append(r.get("status", "?"))
-            else:
-                a = r["summary"]["all"]
-                cells.append(f"{a['exact_body_ticks']:.2f}% / {a['segment_pass']:.2f}%")
-        rows.append((label, cells))
-    rl = latest([r for r in recs if r.get("kind") == "rlpr"], lambda r: r["sim"])
-    if rl:
-        cells = []
-        for s in sims_all:
-            r = rl.get(s)
-            if r is None:
-                cells.append("-")
-            elif r.get("status") != "ok":
-                cells.append(r.get("status", "?"))
-            else:
-                a = r["results"]["segments_120"]["total"]
-                cells.append(f"{a['pass_pct']:.2f}% / {a['mean_norm']:.2f}")
-        rows.append(("RocketSim's rlpr_metric, 120-tick segments: pass / mean norm", cells))
-    for level, label in (("C", "C. whole games, choices given: exact to the end"), ("D", "D. whole games, random stream given: exact to the end")):
-        if not any(k[1] == level for k in acc):
-            continue
-        cells = []
-        for s in sims_all:
-            r = acc.get((s, level, "our recordings"))
-            if r is None:
-                cells.append("-")
-            elif r.get("status") != "ok":
-                cells.append(r.get("status", "?"))
-            else:
-                a = r["summary"]
-                cells.append(f"{a['exact_to_the_end']} of {a['recordings']} games")
-        rows.append((label, cells))
-    if not rows:
+def speed_tables(recs) -> list[str]:
+    sp = [r for r in recs if r.get("kind") == "speed"]
+    if not sp:
         return []
-    out = ["| | " + " | ".join(nice(s) for s in sims_all) + " |", "|---|" + "---|" * len(sims_all)]
-    out += [f"| {label} | " + " | ".join(cells) + " |" for label, cells in rows]
+    out = []
+    last = latest(sp, lambda r: (r["sim"], r.get("mode"), r.get("arenas"), r.get("threads")))
+    for device in ("cpu", "gpu"):
+        rows = [r for r in last.values() if r.get("device", "cpu") == device and r.get("mode")]
+        if not rows:
+            continue
+        sims_here = sim_sort({r["sim"] for r in rows})
+        m = next((r["machine"] for r in rows if r.get("status") == "ok"), rows[0]["machine"])
+        hw = (", ".join(m.get("gpus") or []) or "GPU") if device == "gpu" else f"{m['cpu']}, {m['threads']} threads"
+        out.append(f"### Speed, {device.upper()} simulators ({hw}; {m['os'].split(' (')[0]})\n")
+        out.append("Arena-ticks per second, the median of the rounds (their spread in brackets). Identical work for every "
+                   "simulator: the same start states and controls, 8 ticks per decision, every body read each decision."
+                   + (" CPU and GPU simulators are never in one table." if device == "gpu" else "") + "\n")
+        configs = sorted({(r["mode"], r["arenas"], r["threads"]) for r in rows}, key=lambda c: (c[0], c[1], c[2]))
+        out.append("| mode | arenas | threads | " + " | ".join(nice(s) for s in sims_here) + " |")
+        out.append("|---|---:|---:|" + "---:|" * len(sims_here))
+        for mode, arenas, threads in configs:
+            cells = []
+            for s in sims_here:
+                r = last.get((s, mode, arenas, threads))
+                if r is None:
+                    cells.append("-")
+                elif r.get("status") == "ok":
+                    cells.append(f"{fmt_k(r['arena_ticks_per_s'])} ({fmt_k(r['min'])}-{fmt_k(r['max'])})")
+                else:
+                    cells.append(r.get("status", "not run"))
+            out.append(f"| {mode} | {arenas:,} | {threads if device == 'cpu' else '-'} | " + " | ".join(cells) + " |")
+        out.append("")
+    not_run = latest([r for r in sp if r.get("status") == "not run"], lambda r: r["sim"])
+    if not_run:
+        out.append("Not run here: " + "; ".join(f"{nice(r['sim'])} ({r.get('why', '')})" for r in not_run.values()) + "\n")
+    return out
+
+
+def detail_tables(recs) -> list[str]:
+    acc = acc_rows(recs)
+    out = []
+    for level in ("A", "B", "Bp", "C", "D"):
+        rs = sorted((r for k, r in acc.items() if k[1] == level), key=lambda r: ORDER.index(r["sim"]) if r["sim"] in ORDER else 99)
+        if not rs:
+            continue
+        title, _, given = LEVELS[level]
+        suite = rs[0].get("suite", "")
+        out.append(f"### {title} ({suite})\n")
+        out.append(f"Given: {given}.  ")
+        if level in ("C", "D"):
+            out.append("Scored: every compared packet row to the end of the recording (positions, velocities, rotation, as "
+                       "the game rounds them; boost and pads too when the simulator runs the match itself), the time to the "
+                       "first drift, and the full-state suite's normalized error 1, 5 and 30 s after each kickoff.\n")
+            out.append("| simulator | match flow | recordings | exact to the end | packet rows exact | first drift: median (range) "
+                       "| error 1 s / 5 s / 30 s |")
+            out.append("|---|---|---:|---:|---:|---|---|")
+            for r in rs:
+                if r.get("status") != "ok":
+                    out.append(f"| {nice(r['sim'])} | {r.get('status')}: {r.get('why', '')} | | | | | |")
+                    continue
+                s = r["summary"]
+                d = s.get("first_drift_s") or {}
+                e = s.get("error_after_kickoff") or {}
+                f = lambda x: "-" if x is None else f"{x:.3f}"
+                out.append(f"| {nice(r['sim'])} | {'the harness' if s.get('bodies_only') else 'its own'} | {s['recordings']} | "
+                           f"{s['exact_to_the_end']} | {s['exact_rows']:,} of {s['compared_rows']:,} ({s['exact_pct']:.3f}%) | "
+                           + (f"{d['median']:.1f} s ({d['min']:.1f}-{d['max']:.1f})" if d else "-")
+                           + f" | {f(e.get('1.0'))} / {f(e.get('5.0'))} / {f(e.get('30.0'))} |")
+            for r in rs:
+                if r.get("status") == "ok" and r.get("assists"):
+                    out.append(f"\nAssists for {nice(r['sim'])}: " + "; ".join(r["assists"]) + ".")
+        else:
+            out.append(f"Scored: {SUITE_SCORED}.\n")
+            out.append("| simulator | exact body-ticks | exact segments | segment pass | mean error k1 / k30 / k120 | body-ticks | segments |")
+            out.append("|---|---:|---:|---:|---|---:|---:|")
+            for r in rs:
+                if r.get("status") != "ok":
+                    out.append(f"| {nice(r['sim'])} | {r.get('status')}: {r.get('why', '')} | | | | | |")
+                    continue
+                s = r["summary"]["all"]
+                me = s["mean_error"]
+                out.append(f"| {nice(r['sim'])} | {s['exact_body_ticks']:.4f}% | {s['exact_segments']:.3f}% | {s['segment_pass']:.3f}% | "
+                           f"{me['1']:.4f} / {me['30']:.4f} / {me['120']:.4f} | {s['body_ticks']:,} | {s['segments']:,} |")
+            splits = sorted({k for r in rs if r.get("status") == "ok" for k in r["summary"] if k != "all"})
+            if splits:
+                out.append("\nExact body-ticks by the suite's splits:\n")
+                ok = [r for r in rs if r.get("status") == "ok"]
+                out.append("| split | " + " | ".join(nice(r["sim"]) for r in ok) + " |")
+                out.append("|---|" + "---:|" * len(ok))
+                for sp in splits:
+                    out.append(f"| {sp} | " + " | ".join(f"{r['summary'][sp]['exact_body_ticks']:.3f}%" if sp in r["summary"] else "-" for r in ok) + " |")
+        out.append("")
+    rl = sorted((r for k, r in acc.items() if k[1] == "rlpr"), key=lambda r: ORDER.index(r["sim"]) if r["sim"] in ORDER else 99)
+    if rl:
+        out += ["### RocketSim's own replay metric (rlpr_metric, unchanged)\n",
+                f"Given: {LEVELS['rlpr'][2]}; or one tick from every record (one-tick).  Scored: RocketSim's own normalized "
+                "error per car-tick, its own tolerances (pass = error under 1).\n",
+                "| simulator | 120-tick pass | 120-tick mean norm | one-tick pass | one-tick mean norm | car-ticks |",
+                "|---|---:|---:|---:|---:|---:|"]
+        for r in rl:
+            if r.get("status") != "ok":
+                out.append(f"| {nice(r['sim'])} | {r.get('status')}: {r.get('why', '')} | | | | |")
+                continue
+            a, b = r["results"]["segments_120"]["total"], r["results"]["one_tick"]["total"]
+            out.append(f"| {nice(r['sim'])} | {a['pass_pct']:.3f}% | {a['mean_norm']:.4f} | {b['pass_pct']:.3f}% | {b['mean_norm']:.4f} | {a['support']:,} |")
+        out.append("")
+    return out
+
+
+def adapters_section(recs) -> list[str]:
+    """Each simulator once: its exact version, what its adapter runs, and the adapter's choices."""
+    by = {}
+    for r in recs:
+        if r.get("sim"):
+            by.setdefault(r["sim"], []).append(r)
+    out = []
+    for s in sim_sort(by):
+        rs = by[s]
+        vs = Counter(r.get("version") for r in rs if r.get("version") and r.get("version") != "?")
+        v = vs.most_common(1)[0][0] if vs else "version not reported"
+        about = next((r.get("about") for r in reversed(rs) if r.get("about")), "")
+        ch = next((r.get("choices") for r in reversed(rs) if r.get("choices")), [])
+        out.append(f"- **{nice(s)}**: {v}. {about}" + (". " if about and not about.endswith(".") else " ")
+                   + ("Its adapter: " + "; ".join(ch) + "." if ch else ""))
     return out + [""]
 
 
-def main(out: Path) -> None:
-    recs = load(Path(out))
+def machines(recs) -> list[str]:
+    seen = {}
+    for r in recs:
+        if r.get("machine"):
+            m = r["machine"]
+            seen.setdefault(json.dumps(m, sort_keys=True), set()).add(r.get("bench") or r.get("kind"))
+    out = []
+    for k, benches in seen.items():
+        m = json.loads(k)
+        out.append(f"- {mline(m)}" + (f"; {', '.join(m['gpus'])}" if m.get("gpus") else "")
+                   + (f" ({', '.join(sorted(b for b in benches if b))})" if len(seen) > 1 else ""))
+    return out
+
+
+def build(recs, charts_rel: str | None = None, chart_files=()) -> dict:
+    """The report's sections as markdown lines: summary, speed, details, adapters, machines."""
+    notes = Notes()
+    summary = summary_table(recs, notes)
+    summary += [f"{n}" for n in notes.lines()] + ([""] if notes.texts else [])
+    pics = []
+    if charts_rel is not None:
+        names = sorted({Path(c).name.rsplit("_", 1)[0] for c in chart_files})
+        for base in names:
+            pics.append(f'<picture><source media="(prefers-color-scheme: dark)" srcset="{charts_rel}/{base}_dark.png">'
+                        f'<img alt="{base.replace("_", " ")}" src="{charts_rel}/{base}_light.png" width="720"></picture>')
+            pics.append("")
+    return {"summary": summary, "charts": pics, "speed": speed_tables(recs), "details": detail_tables(recs),
+            "adapters": adapters_section(recs), "machines": machines(recs)}
+
+
+def markdown(sec: dict) -> str:
+    text = ["# Benchmark results\n", "Machine:\n"] + sec["machines"] + ["", "## Summary\n"] + sec["summary"] + sec["charts"]
+    text += ["## Speed\n"] + sec["speed"] + ["## Details\n"] + sec["details"] + ["## The simulators and their adapters\n"] + sec["adapters"]
+    return "\n".join(text)
+
+
+def _inline(s: str) -> str:
+    s = html.escape(s, quote=False).replace("&lt;sup&gt;", "<sup>").replace("&lt;/sup&gt;", "</sup>")
+    s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+    return s
+
+
+def to_html(md: str, images: dict) -> str:
+    """The markdown above (headings, tables, lists, paragraphs, pictures) as one page with its charts inside."""
+    body, table, lst = [], None, False
+    for line in md.splitlines() + [""]:
+        if line.startswith("|"):
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if table is None:
+                table = ["<table><thead><tr>" + "".join(f"<th>{_inline(c)}</th>" for c in cells) + "</tr></thead><tbody>"]
+            elif all(re.fullmatch(r":?-+:?", c) for c in cells):
+                pass
+            else:
+                table.append("<tr>" + "".join(f"<td>{_inline(c)}</td>" for c in cells) + "</tr>")
+            continue
+        if table is not None:
+            body.append("".join(table) + "</tbody></table>")
+            table = None
+        if line.startswith("- "):
+            if not lst:
+                body.append("<ul>")
+                lst = True
+            body.append(f"<li>{_inline(line[2:])}</li>")
+            continue
+        if lst:
+            body.append("</ul>")
+            lst = False
+        if line.startswith("<picture>"):
+            m = re.search(r'srcset="[^"]*/([^"/]+)_dark\.png".*alt="([^"]*)"', line)
+            if m and m.group(1) in images:
+                light, dark = images[m.group(1)]
+                body.append(f'<picture><source media="(prefers-color-scheme: dark)" srcset="data:image/png;base64,{dark}">'
+                            f'<img alt="{m.group(2)}" src="data:image/png;base64,{light}"></picture>')
+            continue
+        h = re.match(r"(#+) (.*)", line)
+        if h:
+            n = len(h.group(1))
+            body.append(f"<h{n}>{_inline(h.group(2))}</h{n}>")
+        elif re.match(r"\d+\. ", line):
+            body.append(f'<p class="note">{_inline(line)}</p>')
+        elif line.strip():
+            body.append(f"<p>{_inline(line)}</p>")
+    css = """
+:root{--bg:#fcfcfb;--ink:#0b0b0b;--muted:#52514e;--rule:#e4e3df;--head:#f3f2ef}
+@media (prefers-color-scheme: dark){:root{--bg:#1a1a19;--ink:#f0efec;--muted:#c3c2b7;--rule:#3a3936;--head:#242422}}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;margin:0 auto;max-width:1100px;padding:24px 16px}
+h1{font-size:26px;margin:0 0 8px}h2{font-size:20px;margin:32px 0 8px}h3{font-size:16px;margin:24px 0 6px}
+p,li{color:var(--ink)}.note{color:var(--muted);font-size:13px;margin:2px 0}
+table{border-collapse:collapse;margin:8px 0 12px;font-size:13px;display:block;overflow-x:auto;max-width:100%}
+th,td{border-bottom:1px solid var(--rule);padding:5px 9px;text-align:left;vertical-align:top}
+th{background:var(--head);font-weight:600}td:not(:first-child){font-variant-numeric:tabular-nums}
+img{max-width:100%;height:auto}code{font-size:13px}sup{color:var(--muted)}
+"""
+    return ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, "
+            "initial-scale=1\"><title>Simulator benchmark</title><style>" + css + "</style></head><body>"
+            + "\n".join(body) + "</body></html>")
+
+
+def fill_doc(doc: Path, sec: dict, charts_dir: Path, made) -> None:
+    """Replace docs/BENCHMARKS.md's generated sections (between its simbench markers) and copy the charts beside it."""
+    text = doc.read_text(encoding="utf-8")
+    dest = doc.parent / "bench"
+    dest.mkdir(exist_ok=True)
+    for c in made:
+        shutil.copy2(c, dest / Path(c).name)
+    rel = build_rel = "bench"
+    parts = {"summary": sec["summary"] + [l.replace("charts/", f"{rel}/") for l in sec["charts"]] + ["", "Machine:", ""] + sec["machines"],
+             "details": ["## Speed\n"] + sec["speed"] + ["## Every benchmark in detail\n"] + sec["details"]
+                        + ["## The simulators and their adapters\n"] + sec["adapters"]}
+    for name, lines in parts.items():
+        a, b = GEN.format(name), END.format(name)
+        block = a + "\n\n" + "\n".join(lines).strip() + "\n\n" + b
+        if a in text and b in text:
+            text = text[:text.index(a)] + block + text[text.index(b) + len(b):]
+        elif "{{" + name.upper() + "}}" in text:
+            text = text.replace("{{" + name.upper() + "}}", block)
+        else:
+            raise SystemExit(f"{doc} has no {name} section to fill ({a})")
+    doc.write_text(text, encoding="utf-8", newline="\n")
+    print(f"filled: {doc} (charts in {dest})")
+
+
+def main(out: Path, doc: Path | None = None, quiet: bool = False) -> None:
+    out = Path(out)
+    recs = load(out)
     if not recs:
         raise SystemExit(f"no results in {out}: run a benchmark first")
-    text = ["# Benchmark results\n"]
-    ms = {json.dumps(r.get("machine"), sort_keys=True) for r in recs if r.get("machine")}
-    for m in ms:
-        m = json.loads(m)
-        text.append(f"Machine: {m['cpu']}, {m['threads']} threads, {m['ram_gb']} GB, {m['os'].split(' (')[0]}"
-                    + (f"; {', '.join(m['gpus'])}" if m.get("gpus") else "") + "\n")
-    text += ["## Summary\n"] + summary_table(recs) + ["## Details\n"] + speed_tables(recs) + accuracy_tables(recs) + rlpr_table(recs)
-    p = Path(out) / "report.md"
-    p.write_text("\n".join(text), encoding="utf-8")
-    made = charts(recs, Path(out) / "charts")
-    print("\n".join(text))
-    print(f"\nwritten: {p}" + "".join(f"\n         {c}" for c in made))
+    made = charts(recs, out / "charts")
+    sec = build(recs, "charts", made)
+    md = markdown(sec)
+    (out / "report.md").write_text(md, encoding="utf-8")
+    images = {}
+    for c in made:
+        base, theme = Path(c).stem.rsplit("_", 1)
+        images.setdefault(base, ["", ""])[0 if theme == "light" else 1] = base64.b64encode(Path(c).read_bytes()).decode()
+    (out / "report.html").write_text(to_html(md, {k: tuple(v) for k, v in images.items()}), encoding="utf-8")
+    if doc:
+        fill_doc(Path(doc), sec, out / "charts", made)
+    print("\n== summary\n" + "\n".join(sec["summary"]))
+    if not quiet:
+        print("\n" + "\n".join(sec["speed"]))
+    print(f"report: {out / 'report.md'}\n        {out / 'report.html'} (open it in a browser)"
+          + "".join(f"\n        {c}" for c in made))
