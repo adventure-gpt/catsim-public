@@ -176,7 +176,10 @@ impl<'a> Full<'a> {
         a.ball_held_2d = (self.whole_u("ball_states.constrained_2d") & 0xffff) != 0;
         // what each touching wheel stands on (the arena, a car or the ball). `set_wheel_normals_mask` marks the wheels
         // whose contact is the game's world contact (bit 5: as recorded); a touching wheel it leaves out stands on a car
-        // or the ball, which catSim's own wheel ray in the start state tells apart (else the nearer of the two)
+        // or the ball, which catSim's own wheel ray in the start state tells apart (else the nearer of the two). The
+        // ray's contact step pushes a dynamic ground it is inside of (a ball under a wheel): only the rays are wanted
+        // here, so the bodies are put back as they were afterwards
+        let bodies_before = a.world.cw.bodies.clone();
         for k in grounds {
             let Some(mut h) = a.car_hidden(k) else { continue };
             let Some(c) = a.players[k].car.as_ref() else { continue };
@@ -217,6 +220,7 @@ impl<'a> Full<'a> {
                 a.set_car_hidden(k, &h);
             }
         }
+        a.world.cw.bodies = bodies_before;
         // the broadphase boxes as the game's last bounds update left them (its predictive contacts read them first)
         let boxes = self.whole_f("solver_scratch.bp.sweep.sap_body_aabb");
         let valid = self.whole_u("solver_scratch.bp.sweep.sap_body_aabb_valid") & 0xffff;
@@ -418,6 +422,17 @@ impl<'a> Full<'a> {
                 for i in 0..cnt.min(4) {
                     let q = slot * 4 + i;
                     if 3 * q + 2 < la.len() && q < d.len() {
+                        if sid >= 100 {
+                            // a plane's point on B is in world axes in the state: into the plane's own frame (catSim's
+                            // planes are turned bodies), and the plane's normal, as catSim's convex-plane contact makes them
+                            let r = &t1.basis.r;
+                            let w = at(&lb, q);
+                            let (dx, dy, dz) = (w.x - t1.origin.x, w.y - t1.origin.y, w.z - t1.origin.z);
+                            let local = v3(dy * r[1].x + dx * r[0].x + dz * r[2].x, dy * r[1].y + dx * r[0].y + dz * r[2].y, dx * r[0].z + dy * r[1].z + dz * r[2].z);
+                            let n = v3(r[0].y * 0.0 + r[0].x * 0.0 + r[0].z, r[1].y * 0.0 + r[1].x * 0.0 + r[1].z, r[2].y * 0.0 + r[2].x * 0.0 + r[2].z);
+                            push(at(&la, q), local, n, d[q]);
+                            continue;
+                        }
                         push(at(&la, q), at(&lb, q), at(&nn, q), d[q]);
                     }
                 }
