@@ -638,8 +638,8 @@ def adapter_blocks(recs) -> list:
     out = []
     for s in sim_sort(by):
         rs = by[s]
-        vs = Counter(r.get("version") for r in rs if r.get("version") and r.get("version") != "?")
-        lines = [f"Version: {vs.most_common(1)[0][0] if vs else 'not reported'}.  "]
+        vs = [r.get("version") for r in rs if r.get("version") and r.get("version") != "?"]
+        lines = [f"Version: {vs[-1] if vs else 'not reported'}.  "]         # (the newest run's)
         about = next((r.get("about") for r in reversed(rs) if r.get("about")), "")
         if about:
             lines.append(about.rstrip(".") + ".  ")
@@ -661,8 +661,8 @@ def adapters_section(recs) -> list[str]:
     out = []
     for s in sim_sort(by):
         rs = by[s]
-        vs = Counter(r.get("version") for r in rs if r.get("version") and r.get("version") != "?")
-        v = vs.most_common(1)[0][0] if vs else "version not reported"
+        vs = [r.get("version") for r in rs if r.get("version") and r.get("version") != "?"]
+        v = vs[-1] if vs else "version not reported"                        # (the newest run's)
         about = next((r.get("about") for r in reversed(rs) if r.get("about")), "")
         ch = next((r.get("choices") for r in reversed(rs) if r.get("choices")), [])
         out.append(f"- **{nice(s)}**: {v}. {about}" + (". " if about and not about.endswith(".") else " ")
@@ -970,6 +970,12 @@ def model(recs) -> dict:
                      "(include/rocketgpu/detail/step/env_step.hpp), memcpy(&dst, &src, sizeof(T)) in place of the call with "
                      "__builtin_assume_aligned, which nvcc rejects for sm_89. The same bytes are copied; bench/adapters/rocketgpu.py "
                      "has it.")
+    cat_acc = next((r.get("version") for r in acc.values() if r.get("sim") == "catsim" and r.get("version") and r.get("status") == "ok"), "")
+    cat_old = sorted({r.get("version", "") for r in recs if r.get("kind") == "speed" and r.get("sim") == "catsim" and r.get("version", "") != cat_acc})
+    if cat_acc and cat_old:
+        notes.append(f"catSim's speed rows were measured on {cat_old[0].split(' (')[0]}, before the version number moved to "
+                     f"{cat_acc.split(' (')[0].split()[-1]}; the only engine change since is where a spawn selector's body is placed, not "
+                     "the ticks being timed.")
     speed_cpu = next((r["machine"]["cpu"] for r in recs if r.get("kind") == "speed" and r.get("machine")), None)
     places = {}
     for (sim, lv), r in acc.items():
