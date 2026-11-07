@@ -114,7 +114,18 @@ impl<'a> Full<'a> {
         if r.len() < nc + 1 {
             return None;
         }
-        let h: Vec<u16> = r[..nc + 1].iter().map(|&x| x as u16).collect();
+        let mut h: Vec<u16> = r[..nc + 1].iter().map(|&x| x as u16).collect();
+        // a demolished car holds no handle: it gets one from the state's free stack (`sap_free`, the top used first),
+        // so that catSim, which makes it and demolishes it again (in car order, each freed handle on top), respawns it
+        // with the handle the game will give it
+        let free = self.raw("solver_scratch.bp.sweep.sap_free");
+        let mut top = (self.whole_u("solver_scratch.bp.sweep.sap_free_count") as u8 as usize).min(free.len());
+        for k in (1..=nc).rev() {
+            if h[k] == 0 && top > 0 {
+                top -= 1;
+                h[k] = free[top] as u16;
+            }
+        }
         let distinct = h.iter().collect::<std::collections::HashSet<_>>().len() == h.len();
         (h.iter().all(|&x| x != 0) && distinct).then_some(h)
     }
