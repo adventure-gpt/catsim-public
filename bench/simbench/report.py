@@ -840,7 +840,9 @@ def main(out: Path, doc: Path | None = None, quiet: bool = False) -> None:
         print(f"warning: a benchmark named by letter in {b}")
     if doc:
         fill_doc(Path(doc), sec, out / "charts", made)
-    print("\n== at a glance\n" + "\n".join(sec["glance"]) + "\n== accuracy\n" + "\n".join(sec["accuracy"]))
+    has_acc = any(r.get("kind") in ("accuracy", "rlpr") for r in recs)
+    print("\n== at a glance\n" + "\n".join(sec["glance"])
+          + ("\n== accuracy\n" + "\n".join(sec["accuracy"]) if has_acc else ""))
     if not quiet:
         print("\n" + "\n".join(sec["speed"]))
     print(f"report: {out / 'report.md'}\n        {out / 'report.html'} (open it in a browser)"
