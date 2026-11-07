@@ -11,6 +11,10 @@ bodies). The harness supplies the flow, each piece an assist named in the result
   - after a goal, the next kickoff the same way, when the recording has it (the simulator's own goal, if it has one,
     doesn't matter: the ball's rows during a goal's replay are not scored);
   - a respawn: the car is put where the recording's packet first shows it again;
+  - a game recorded at float precision: the same, and at its first float row (a few ticks after the first countdown)
+    the bodies become the game's own floats, word for word; the rest of each car's state stays what the simulator
+    built through the countdown from the same controls (a Bullet-units adapter takes the words themselves, a uu one
+    the uu values its x 0.02 turns into those words, where they exist, and is compared in uu: the words x 50);
   - each rendered frame: its physics ticks (the frame's tick count at 120 Hz; a frame with no tick runs none), with the
     frame's controls; a jump held through a countdown is not a press when the cars go (the game's input is read all
     through the countdown, so the button is let go first, as in the game).
@@ -37,7 +41,7 @@ PRESET_OF_BODY = {23: "Octane", 4906: "Octane", 5039: "Octane", 403: "Dominus", 
 
 ASSISTS = ["the harness supplies only the match flow the simulator lacks: each kickoff's start (cars and ball where the "
            "recording's countdown starts them, as its packet shows them: positions to 0.01 uu, velocities to 0.01 uu/s; at "
-           "float precision, the game's own floats at the first float row) and the hold through the countdown, the "
+           "float precision, the bodies then set to the game's own floats at the first float row) and the hold through the countdown, the "
            "restart after each goal when the recording has it, and each demolished car's respawn spot from the recording",
            "the simulator runs everything it models itself: physics, boost and pads, demolitions and their respawn timers, "
            "goals (its own goal, if it has one, changes nothing the harness does)",
