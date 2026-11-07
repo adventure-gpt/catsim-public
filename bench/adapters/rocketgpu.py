@@ -50,8 +50,8 @@ class RocketGPU(Adapter):
     choices = [
         "speed: BatchSim, one simulator for all arenas; 8 ticks' controls a call (step_with_device_controls); "
         "boost pads, car-car collisions, demos and scoring on; states stay in the simulator",
-        "level A: set_full_state with every suite field, after the segment's own calls and mutators (as the suite runs it)",
-        "level B: set_state_v3 (v3's CarState field for field) and the ball's sleep flag through the full state",
+        "full-state start: set_full_state with every suite field, after the segment's own calls and mutators (as the suite runs it)",
+        "public-state start: set_state_v3 (v3's CarState field for field) and the ball's sleep flag through the full state",
         "per tick: driving_disabled, the ball's 2D hold, the frame's render fraction and start time, pad credits",
     ]
 

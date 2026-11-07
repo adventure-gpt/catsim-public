@@ -2,7 +2,7 @@
 
 Its fastest published path for many arenas is `Arena.multi_step(arenas, ticks)` (the package steps the arenas on its own
 threads); one arena runs with `arena.step`. State in through `car.set_state` / `ball.set_state` with every CarState field
-the level gives; bodies out through `get_state`. The package reads RocketSim's collision meshes (`collision_meshes/`).
+the start gives; bodies out through `get_state`. The package reads RocketSim's collision meshes (`collision_meshes/`).
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ class RocketSimV2(Adapter):
             "threads": True}
     choices = [
         "accuracy not run: v2's CarState clocks (flip, jump) mean other things than v3's, and no checked mapping exists yet",
-        "sets every CarState field the level gives (jump and flip clocks, flip torque, boost, supersonic and handbrake "
+        "sets every CarState field the start gives (jump and flip clocks, flip torque, boost, supersonic and handbrake "
         "state, auto-flip, world contact, wheel count, last controls, demolition); the ball through BallState",
         "batched speed through Arena.multi_step (its own threads; the thread count isn't settable from Python)",
         "takes no frame timing and no contact manifolds; per-car Python calls set controls and read states",

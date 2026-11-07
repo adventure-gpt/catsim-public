@@ -33,11 +33,11 @@ class CatsimPy(Adapter):
     caps = {"levels": ["packet", "v3", "rlpr"], "frame_timing": True, "game_flow": True, "rng_stream": True, "spot_choices": True}
     choices = [
         "bodies written exactly as given (position x 0.02, velocity x 0.02, the rotation matrix as is)",
-        "sets every hidden field the level gives: jump, flip, boost and supersonic clocks, the dodge torque from "
+        "sets every hidden field the start gives: jump, flip, boost and supersonic clocks, the dodge torque from "
         "flip_rel_torque, wheel contacts, held controls, bump and ball-hit gates, demolitions",
         "can't set: contact manifolds' cached points and the broadphase pair order (catSim makes them at the first tick)",
         "pad pickups from the recording (the game's own pad rule off), cars held where the recording holds them",
-        "whole games (levels C, D): catSim's own round flow (countdowns, goals, restarts, pickups, demolitions), the "
+        "whole games: catSim's own round flow (countdowns, goals, restarts, pickups, demolitions), the "
         "recording's frames as the game ran them; C takes the kickoff and respawn spots given, D its own choices from "
         "the random stream's start (the draw model from the data folder's items)",
     ]

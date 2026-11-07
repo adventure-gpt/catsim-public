@@ -174,6 +174,13 @@ so drift in the machine's load falls on all of them alike. Rows: one arena on on
 1 to all threads, and 1,024 arenas on all threads (a training load). GPU simulators get their own table at 1,024 to
 16,384 arenas. CPU and GPU numbers are never in one table.
 
+Each timed round also records what else the machine was doing: the load average, the CPU time every process outside
+the harness and its workers used during the round, and any other process on the GPU (on Linux; elsewhere the report
+says it wasn't measured). A round where CPU time outside the harness came to more than one core gets a footnote, so a
+busy machine shows in anyone's own report. Under WSL2 that CPU time includes what the Windows side takes from the
+virtual machine; the Windows processes themselves are not measured. The published speed rows were measured with nothing else running on the
+machine.
+
 ## Each simulator's best honest shot
 
 Every adapter follows the same rules, and its choices are printed with its results:

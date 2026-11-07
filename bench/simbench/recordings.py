@@ -75,7 +75,7 @@ def run(names, setup_env, levels, limit, jobs, out_dir, emit):
             floats = lv in ("Cf", "Df")
             if not by_level[lv]:
                 emit({"kind": "accuracy", "level": lv, "suite": "our recordings", "sim": label, "status": "not run",
-                      "why": "no recordings of this level found (bench/recordings, SIMBENCH_RECORDINGS)"})
+                      "why": "no recordings for this run found (bench/recordings, SIMBENCH_RECORDINGS, SIMBENCH_FLOAT_RECORDINGS)"})
                 continue
             t0 = time.time()
             lock = threading.Lock()
@@ -173,5 +173,5 @@ ASSISTS = {
     "D": ["the same start", "the game's random-number state and clock at the start, the kickoff spawn spots it chooses "
           "from, and what draws from the stream (the cars' items' animated parts, from the data folder's items.txt): "
           "the simulator predicts every kickoff and respawn spot itself",
-          "the end-of-match rule as in C"],
+          "the end-of-match rule as with the spots given"],
 }
