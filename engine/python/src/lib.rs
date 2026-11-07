@@ -144,6 +144,142 @@ impl NativeArena {
 
 #[pymethods]
 impl NativeArena {
+    // ---- replaying a recorded game from its start (whole-game benchmarks): the round's own setup steps
+
+    /// The first kickoff's bodies as the game drops them: cars at these actor spots ((x, y, z) uu, rotator), the ball
+    /// in the middle. For an arena made with `kickoff=False`.
+    #[pyo3(signature = (spots = None))]
+    fn start_at_drop(&mut self, spots: Option<Vec<([f32; 3], [i32; 3])>>) {
+        let q = spots.map(|s| s.iter().map(|(l, r)| (v3(l[0], l[1], l[2]), Rotator { pitch: r[0], yaw: r[1], roll: r[2] })).collect());
+        self.slot.arena.start_at_drop(q);
+    }
+
+    /// A restart as the game makes one (new bodies, a countdown), `steps` ticks into it, the cars at these spots.
+    #[pyo3(signature = (spots = None, steps = 0))]
+    fn restart(&mut self, spots: Option<Vec<([f32; 3], [i32; 3])>>, steps: i32) {
+        let q = spots.map(|s| s.iter().map(|(l, r)| (v3(l[0], l[1], l[2]), Rotator { pitch: r[0], yaw: r[1], roll: r[2] })).collect());
+        self.slot.arena.start_like_restart(q, steps);
+        self.slot.episode_time = 0.0;
+        self.slot.time_since_touch = 0.0;
+    }
+
+    /// The broadphase handles the next restart's bodies take, ball first.
+    fn set_next_handles(&mut self, order: Vec<u16>) {
+        self.slot.arena.set_next_handles(&order);
+    }
+
+    /// Per car, the physics steps its body waits for after a restart (cars that joined a match one after another).
+    fn set_birth_delay(&mut self, delay: Vec<u32>) {
+        for (p, d) in self.slot.arena.players.iter_mut().zip(delay) {
+            p.birth_delay = d;
+        }
+    }
+
+    /// The ball at rest on its kickoff spot, asleep or not, as a match's first kickoff has it.
+    fn set_ball_at_rest(&mut self, asleep: bool) {
+        self.slot.arena.set_ball_at_rest(asleep);
+    }
+
+    #[setter]
+    fn set_physics_frame(&mut self, frame: i32) {
+        self.slot.arena.physics_frame = frame;
+    }
+
+    /// The match clock: `seconds` left of a match that long.
+    fn set_match_seconds(&mut self, seconds: f32) {
+        self.slot.arena.config.match_seconds = Some(seconds);
+        self.slot.arena.clock.game_time = seconds;
+    }
+
+    /// The game's own countdown clock in a countdown: its length and default length (s), seconds shown, the update
+    /// timer's and the start timer's elapsed seconds (-1: not running), whether it is the warm-up, the next spawn index.
+    #[allow(clippy::too_many_arguments)]
+    fn set_countdown(&mut self, countdown_time: i32, default: i32, remaining: i32, update_elapsed: f32, start_elapsed: f32, warmup: bool,
+                     next_spawn_index: i32) -> PyResult<()> {
+        use catsim::game::round::{CountdownClock, FrameTimer};
+        let a = &mut self.slot.arena;
+        if !matches!(a.phase, Phase::Countdown { .. }) {
+            return Err(PyRuntimeError::new_err("the countdown clock can be set only during a countdown"));
+        }
+        let mut c = CountdownClock::new(countdown_time, default);
+        c.remaining = remaining;
+        c.replicated_remaining = remaining;
+        c.warmup = warmup;
+        c.next_spawn_index = next_spawn_index;
+        c.start_timer = if start_elapsed >= 0.0 { FrameTimer { rate: 1.0, elapsed: start_elapsed, active: true } } else { FrameTimer::default() };
+        c.update_timer = if update_elapsed >= 0.0 { FrameTimer { rate: 1.0, elapsed: update_elapsed, active: true } } else { FrameTimer::default() };
+        a.countdown_clock = Some(c);
+        Ok(())
+    }
+
+    /// The game's kickoff spawn spots, as its spawn selector holds them: per team the primary and secondary spots
+    /// ((x, y, z) uu, rotator), and the next spawn index. With the random-number model on, kickoffs choose from them.
+    fn set_spawn_selector(&mut self, primary: Vec<Vec<([f32; 3], [i32; 3])>>, secondary: Vec<Vec<([f32; 3], [i32; 3])>>,
+                          next_spawn_index: i32) -> PyResult<()> {
+        use catsim::game::round::{CrtRand, SpawnSelector, SpawnSpot};
+        if primary.len() != 2 || secondary.len() != 2 {
+            return Err(PyValueError::new_err("two teams of spots"));
+        }
+        let conv = |v: &Vec<([f32; 3], [i32; 3])>| v.iter().map(|(l, r)| SpawnSpot { location: v3(l[0], l[1], l[2]), rotation: Rotator { pitch: r[0], yaw: r[1], roll: r[2] } }).collect::<Vec<_>>();
+        self.slot.arena.selector = Some(SpawnSelector { next_spawn_index, primary: [conv(&primary[0]), conv(&primary[1])],
+                                                        secondary: [conv(&secondary[0]), conv(&secondary[1])], rng: CrtRand { state: 0 } });
+        Ok(())
+    }
+
+    /// Script the round (goals and restarts only when told) or let the game's own flow run.
+    fn set_scripted(&mut self, on: bool) {
+        self.slot.arena.scripted = on;
+    }
+
+    /// The coming frame starts the round (`started`), or a countdown held for at least `steps` more ticks.
+    fn round_gate(&mut self, started: bool, steps: i32) {
+        self.slot.arena.round_gate(started, steps);
+    }
+
+    /// What a packet would show, before its rounding: per car [present, x, y, z, vx, vy, vz, wx, wy, wz, pitch, yaw,
+    /// roll (rotator units), boost (0..100)], the ball [present, x, y, z, vx, vy, vz, wx, wy, wz, pitch, yaw, roll],
+    /// then each pad's active flag.
+    fn packet_view(&self) -> Vec<f32> {
+        let a = &self.slot.arena;
+        let mut out = Vec::with_capacity(self.slot.num_cars * 14 + 13 + catsim::game::pads::NUM_PADS);
+        for i in 0..self.slot.num_cars {
+            let p = &a.players[i];
+            let present = !p.demolished && (p.car.is_some() || p.pending_spawn.is_some());
+            let mut c = vec![0.0; adapter::C_DIM];
+            self.slot.write_car(i, &mut c);
+            let mut h = vec![0.0; adapter::H_DIM];
+            self.slot.write_hidden(i, &mut h);
+            out.push(present as i32 as f32);
+            out.extend_from_slice(&c[adapter::C_POS..adapter::C_POS + 9]);
+            out.extend_from_slice(&h[adapter::H_ROTATOR..adapter::H_ROTATOR + 3]);
+            out.push(c[adapter::C_BOOST]);
+        }
+        match a.ball.as_ref() {
+            Some(b) => {
+                let s = if b.first_frame { b.birth_state } else { catsim::game::rb_state::read_body(&a.world.cw.bodies[b.body.0 as usize], &b.limits) };
+                let mut row = vec![0.0; adapter::A_DIM];
+                self.slot.write_arena(&mut row);
+                let r = adapter::state_rotator(&s);
+                out.push(1.0);
+                out.extend_from_slice(&row[0..9]);
+                out.extend_from_slice(&[r.pitch as f32, r.yaw as f32, r.roll as f32]);
+            }
+            None => out.extend_from_slice(&[0.0; 13]),
+        }
+        for p in a.pads.pads.iter() {
+            out.push(if p.picked_up { 0.0 } else { 1.0 });
+        }
+        out
+    }
+
+    /// The match clock: (seconds left, overtime, blue goals, orange goals) and the round's phase (0 countdown, 1
+    /// playing, 2 after a goal, 3 ended).
+    fn clock(&self) -> (f32, bool, [i32; 2], i32) {
+        let a = &self.slot.arena;
+        let ph = match a.phase { Phase::Countdown { .. } => 0, Phase::Active => 1, Phase::PostGoal { .. } => 2, Phase::Ended => 3 };
+        (a.clock.game_time, a.clock.overtime, a.clock.score, ph)
+    }
+
     /// An exact copy of this arena: bodies, contact caches, timers, everything (the next ticks are identical).
     fn copy(&self) -> Self {
         self.clone()
@@ -306,9 +442,12 @@ impl NativeArena {
     /// `cars`: (body or preset name, team 0 blue / 1 orange) in the order they join. `round_flow`: run
     /// the game's own goal, explosion and restart flow; off, a goal is only reported. `map`: Stadium_P or
     /// UF_Night_P (the same field; UF_Night_P has its own pad heights and no planes behind the goals).
+    /// `kickoff`: start at a kickoff, ready to play (the default); off, the arena stays as built, for a replay's own
+    /// setup (`start_at_drop`, `restart`, ...). `countdown_ticks`: a kickoff countdown's length when the game's own
+    /// countdown clock isn't running.
     #[new]
-    #[pyo3(signature = (cars, data_dir, round_flow=false, map="Stadium_P"))]
-    fn new(cars: Vec<(String, u8)>, data_dir: PathBuf, round_flow: bool, map: &str) -> PyResult<Self> {
+    #[pyo3(signature = (cars, data_dir, round_flow=false, map="Stadium_P", kickoff=true, countdown_ticks=0))]
+    fn new(cars: Vec<(String, u8)>, data_dir: PathBuf, round_flow: bool, map: &str, kickoff: bool, countdown_ticks: i32) -> PyResult<Self> {
         let pad_layout = layout(map)?;
         let dir = soccar_dir(&data_dir);
         catsim::data::load(&dir).map_err(rt)?;
@@ -322,7 +461,7 @@ impl NativeArena {
             list.push((p, *team));
             bodies.push(b);
         }
-        let cfg = RoundConfig { countdown_ticks: 0, post_goal_time: 3.0, match_seconds: None };
+        let cfg = RoundConfig { countdown_ticks, post_goal_time: 3.0, match_seconds: None };
         let mut arena = Arena::new_with_layout(&list, &dir, cfg, pad_layout).map_err(rt)?;
         for (i, b) in bodies.iter().enumerate() {
             if let Some(b) = b {
@@ -342,7 +481,11 @@ impl NativeArena {
             goal: -1.0,
         };
         let mut me = NativeArena { slot, dir, ticks: 0, round_flow, predictor: None };
-        me.kickoff();
+        if kickoff {
+            me.kickoff();
+        } else {
+            me.slot.arena.scripted = !round_flow;
+        }
         Ok(me)
     }
 

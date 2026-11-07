@@ -1,0 +1,753 @@
+{
+ "format": 1,
+ "about": "Our own real-game recordings for the whole-game levels C and D (python -m simbench recordings). Each was recorded from the real game (an RLBot match, Steam edition, 31 October to 4 November 2026) and holds only what a replay needs: the first kickoff's start, every frame's physics steps, duration, render alpha and controls, the level's spot choices or random-stream start, and the packet rows the score compares.",
+ "release": "the files marked 'release' are in the release archive catsim-recordings-v1.tar (unpack it and point SIMBENCH_RECORDINGS at the folder); 'git' ones are in this folder",
+ "game_data": "replay them with game data from catsim-dump on Steam build 26349479 (6 November 2026) or one with the same tables: the dump of build 25914621 holds Darkcar (Batmobile) values a float step or two off from the ones these games ran on, and the recordings with a Darkcar body drift with it",
+ "recordings": [
+  {
+   "file": "1v1_stadium_01.npz",
+   "name": "1v1_stadium_01",
+   "levels": [
+    "C"
+   ],
+   "mode": "1v1",
+   "map": "Stadium_P",
+   "seconds": 338.0,
+   "physics_ticks": 40561,
+   "frames": 81444,
+   "compared_rows": 40552,
+   "goals": 3,
+   "demolitions": 1,
+   "what": "a whole RLBot 1v1 match on Stadium_P from its first kickoff to its end (338.0 s of play, 40,561 physics ticks, 81,444 rendered frames of 0, 1 or more ticks); exercises 3 goals (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 4246335,
+   "sha256": "24299f7d52c0efde10d4ced173d0558002a9e1823f069cb1a651cccda4dcf2d7"
+  },
+  {
+   "file": "1v1_stadium_02.npz",
+   "name": "1v1_stadium_02",
+   "levels": [
+    "C"
+   ],
+   "mode": "1v1",
+   "map": "Stadium_P",
+   "seconds": 367.1,
+   "physics_ticks": 44056,
+   "frames": 88802,
+   "compared_rows": 44032,
+   "goals": 6,
+   "demolitions": 0,
+   "what": "a whole RLBot 1v1 match on Stadium_P from its first kickoff to its end (367.1 s of play, 44,056 physics ticks, 88,802 rendered frames of 0, 1 or more ticks); exercises 6 goals (goal replays, restarts), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 4467820,
+   "sha256": "9f792a59ad32a4f2daf0f1bf82af7a5c67c449a0c70f7b002456c730fefe92ca"
+  },
+  {
+   "file": "1v1_stadium_03.npz",
+   "name": "1v1_stadium_03",
+   "levels": [
+    "C"
+   ],
+   "mode": "1v1",
+   "map": "Stadium_P",
+   "seconds": 432.5,
+   "physics_ticks": 51898,
+   "frames": 105341,
+   "compared_rows": 51890,
+   "goals": 13,
+   "demolitions": 1,
+   "what": "a whole RLBot 1v1 match on Stadium_P from its first kickoff to its end (432.5 s of play, 51,898 physics ticks, 105,341 rendered frames of 0, 1 or more ticks); exercises 13 goals (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 4814136,
+   "sha256": "5d7bc8f39ba68ef27870043308a5ca990a8b95a5ed49cfd8b0f6c186e787a19a"
+  },
+  {
+   "file": "1v1_stadium_04.npz",
+   "name": "1v1_stadium_04",
+   "levels": [
+    "C"
+   ],
+   "mode": "1v1",
+   "map": "Stadium_P",
+   "seconds": 415.4,
+   "physics_ticks": 49843,
+   "frames": 100984,
+   "compared_rows": 49836,
+   "goals": 11,
+   "demolitions": 1,
+   "what": "a whole RLBot 1v1 match on Stadium_P from its first kickoff to its end (415.4 s of play, 49,843 physics ticks, 100,984 rendered frames of 0, 1 or more ticks); exercises 11 goals (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 5038052,
+   "sha256": "e33f7e0a8a8faae20712300bc05cbb18422ad75a2cf57bd359bdda302c936913"
+  },
+  {
+   "file": "1v1_stadium_05.npz",
+   "name": "1v1_stadium_05",
+   "levels": [
+    "C"
+   ],
+   "mode": "1v1",
+   "map": "Stadium_P",
+   "seconds": 385.3,
+   "physics_ticks": 46231,
+   "frames": 93323,
+   "compared_rows": 46216,
+   "goals": 8,
+   "demolitions": 1,
+   "what": "a whole RLBot 1v1 match on Stadium_P from its first kickoff to its end (385.3 s of play, 46,231 physics ticks, 93,323 rendered frames of 0, 1 or more ticks); exercises 8 goals (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 4695359,
+   "sha256": "3ede59d5fd2fb6f7e0d7be7320ba2eaf9d366ad496793210c0afe586440f28ff"
+  },
+  {
+   "file": "1v1_stadium_06.npz",
+   "name": "1v1_stadium_06",
+   "levels": [
+    "C"
+   ],
+   "mode": "1v1",
+   "map": "Stadium_P",
+   "seconds": 340.3,
+   "physics_ticks": 40840,
+   "frames": 81989,
+   "compared_rows": 40829,
+   "goals": 3,
+   "demolitions": 0,
+   "what": "a whole RLBot 1v1 match on Stadium_P from its first kickoff to its end (340.3 s of play, 40,840 physics ticks, 81,989 rendered frames of 0, 1 or more ticks); exercises 3 goals (goal replays, restarts), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 4373408,
+   "sha256": "4db55cf3a8261e6d4c0bdfed68468f52b54586900e3a722a1df6e615775ca9a2"
+  },
+  {
+   "file": "1v1_stadium_07.npz",
+   "name": "1v1_stadium_07",
+   "levels": [
+    "C"
+   ],
+   "mode": "1v1",
+   "map": "Stadium_P",
+   "seconds": 534.2,
+   "physics_ticks": 64103,
+   "frames": 64667,
+   "compared_rows": 64090,
+   "goals": 9,
+   "demolitions": 1,
+   "what": "a whole RLBot 1v1 match on Stadium_P from its first kickoff to its end (534.2 s of play, 64,103 physics ticks, 64,667 rendered frames of 0, 1 or more ticks); exercises 9 goals (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 6474602,
+   "sha256": "e865142e1c3588fbb028af3d1ad9a9bd86f12d575c852221faddbe08429c4e08"
+  },
+  {
+   "file": "1v1_stadium_08.npz",
+   "name": "1v1_stadium_08",
+   "levels": [
+    "C",
+    "D"
+   ],
+   "mode": "1v1",
+   "map": "Stadium_P",
+   "seconds": 366.2,
+   "physics_ticks": 43941,
+   "frames": 44236,
+   "compared_rows": 43912,
+   "goals": 5,
+   "demolitions": 1,
+   "what": "a whole RLBot 1v1 match on Stadium_P from its first kickoff to its end (366.2 s of play, 43,941 physics ticks, 44,236 rendered frames of 0, 1 or more ticks); exercises 5 goals (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; levels C and D (D: the random stream's start is given and the simulator chooses every spot itself; C: the spots are given)",
+   "where": "git",
+   "bytes": 4318873,
+   "sha256": "5b01eaca97baebbc288db55776bf29fc0f7385e40ef60b4e3a80b9fa792d1aa4"
+  },
+  {
+   "file": "2v2_night_01.npz",
+   "name": "2v2_night_01",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "UF_Night_P",
+   "seconds": 353.3,
+   "physics_ticks": 42401,
+   "frames": 42627,
+   "compared_rows": 42369,
+   "goals": 4,
+   "demolitions": 3,
+   "what": "a whole RLBot 2v2 match on UF_Night_P from its first kickoff to its end (353.3 s of play, 42,401 physics ticks, 42,627 rendered frames of 0, 1 or more ticks); exercises 4 goals (goal replays, restarts), 3 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 7035261,
+   "sha256": "523c6d94b3c302dd179f3489b60242d661220374604071621544a0fbb8952c66"
+  },
+  {
+   "file": "2v2_night_02.npz",
+   "name": "2v2_night_02",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "UF_Night_P",
+   "seconds": 369.3,
+   "physics_ticks": 44320,
+   "frames": 44192,
+   "compared_rows": 43996,
+   "goals": 3,
+   "demolitions": 4,
+   "what": "a whole RLBot 2v2 match on UF_Night_P from its first kickoff to its end (369.3 s of play, 44,320 physics ticks, 44,192 rendered frames of 0, 1 or more ticks); exercises 3 goals (goal replays, restarts), 4 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 7532392,
+   "sha256": "13dc614d90705b6fc9e1e3eaa4d22265dbc9071f29677a84eeda374574ecdce2"
+  },
+  {
+   "file": "2v2_night_03.npz",
+   "name": "2v2_night_03",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "UF_Night_P",
+   "seconds": 318.9,
+   "physics_ticks": 38266,
+   "frames": 73956,
+   "compared_rows": 38035,
+   "goals": 1,
+   "demolitions": 0,
+   "what": "a whole RLBot 2v2 match on UF_Night_P from its first kickoff to its end (318.9 s of play, 38,266 physics ticks, 73,956 rendered frames of 0, 1 or more ticks); exercises 1 goal (goal replays, restarts), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 6848402,
+   "sha256": "ac2764e26b547bd8e709f0c643c1c9e52b82c3a797d5f9adbe3db12c2e4a1996"
+  },
+  {
+   "file": "2v2_night_04.npz",
+   "name": "2v2_night_04",
+   "levels": [
+    "C",
+    "D"
+   ],
+   "mode": "2v2",
+   "map": "UF_Night_P",
+   "seconds": 319.0,
+   "physics_ticks": 38285,
+   "frames": 38139,
+   "compared_rows": 38072,
+   "goals": 1,
+   "demolitions": 0,
+   "what": "a whole RLBot 2v2 match on UF_Night_P from its first kickoff to its end (319.0 s of play, 38,285 physics ticks, 38,139 rendered frames of 0, 1 or more ticks); exercises 1 goal (goal replays, restarts), kickoff countdowns, pad pickups and boost, the match clock to its end; levels C and D (D: the random stream's start is given and the simulator chooses every spot itself; C: the spots are given); the cars' items are given for the random-draw model",
+   "where": "release",
+   "bytes": 6541586,
+   "sha256": "28d3e7d79d143c135cb1028e880e6625d26bd3cb5b2a83f90d1f5247e68553eb"
+  },
+  {
+   "file": "2v2_stadium_01.npz",
+   "name": "2v2_stadium_01",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "Stadium_P",
+   "seconds": 357.2,
+   "physics_ticks": 42866,
+   "frames": 85877,
+   "compared_rows": 42814,
+   "goals": 5,
+   "demolitions": 0,
+   "what": "a whole RLBot 2v2 match on Stadium_P from its first kickoff to its end (357.2 s of play, 42,866 physics ticks, 85,877 rendered frames of 0, 1 or more ticks); exercises 5 goals (goal replays, restarts), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 7263888,
+   "sha256": "95e8b461404cd95309d4d5e5ccda43d5aa7325f381c3541a743281cb4dae4a7f"
+  },
+  {
+   "file": "2v2_stadium_02.npz",
+   "name": "2v2_stadium_02",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "Stadium_P",
+   "seconds": 417.5,
+   "physics_ticks": 50098,
+   "frames": 101090,
+   "compared_rows": 50056,
+   "goals": 11,
+   "demolitions": 4,
+   "what": "a whole RLBot 2v2 match on Stadium_P from its first kickoff to its end (417.5 s of play, 50,098 physics ticks, 101,090 rendered frames of 0, 1 or more ticks); exercises 11 goals (goal replays, restarts), 4 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 7737838,
+   "sha256": "43d8b16dd5c2314de45b6fe5229e11d92464eae12fac387e41ca2d1acd9a4f5f"
+  },
+  {
+   "file": "2v2_stadium_03.npz",
+   "name": "2v2_stadium_03",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "Stadium_P",
+   "seconds": 361.2,
+   "physics_ticks": 43343,
+   "frames": 86852,
+   "compared_rows": 43273,
+   "goals": 5,
+   "demolitions": 0,
+   "what": "a whole RLBot 2v2 match on Stadium_P from its first kickoff to its end (361.2 s of play, 43,343 physics ticks, 86,852 rendered frames of 0, 1 or more ticks); exercises 5 goals (goal replays, restarts), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 7396630,
+   "sha256": "a5e800f5a9059e2c4e192c8434d9ae6674bc8dce1038e27306adbf504d90931e"
+  },
+  {
+   "file": "2v2_stadium_04.npz",
+   "name": "2v2_stadium_04",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "Stadium_P",
+   "seconds": 386.0,
+   "physics_ticks": 46320,
+   "frames": 93202,
+   "compared_rows": 46287,
+   "goals": 8,
+   "demolitions": 1,
+   "what": "a whole RLBot 2v2 match on Stadium_P from its first kickoff to its end (386.0 s of play, 46,320 physics ticks, 93,202 rendered frames of 0, 1 or more ticks); exercises 8 goals (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 7538140,
+   "sha256": "e6effbdd88ad0ac5b2a6a45ec440173300c3ff9e3f888311c9cff6541ceee74f"
+  },
+  {
+   "file": "2v2_stadium_05.npz",
+   "name": "2v2_stadium_05",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "Stadium_P",
+   "seconds": 179.9,
+   "physics_ticks": 21586,
+   "frames": 43127,
+   "compared_rows": 21557,
+   "goals": 1,
+   "demolitions": 0,
+   "what": "a whole RLBot 2v2 match on Stadium_P from its first kickoff to its end (179.9 s of play, 21,586 physics ticks, 43,127 rendered frames of 0, 1 or more ticks); exercises 1 goal (goal replays, restarts), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 3714829,
+   "sha256": "de59259d02fd8c26652fefc9abc05874823b3539750da1d204ac7ebf24e1e1c5"
+  },
+  {
+   "file": "2v2_stadium_06.npz",
+   "name": "2v2_stadium_06",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "Stadium_P",
+   "seconds": 366.2,
+   "physics_ticks": 43950,
+   "frames": 88553,
+   "compared_rows": 43914,
+   "goals": 6,
+   "demolitions": 2,
+   "what": "a whole RLBot 2v2 match on Stadium_P from its first kickoff to its end (366.2 s of play, 43,950 physics ticks, 88,553 rendered frames of 0, 1 or more ticks); exercises 6 goals (goal replays, restarts), 2 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 7414409,
+   "sha256": "2dd1d2bc55dcd9026b55fcaf6d8d5b80da79edb5ff74ddc9bf23362d75c3bc76"
+  },
+  {
+   "file": "2v2_stadium_07.npz",
+   "name": "2v2_stadium_07",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "Stadium_P",
+   "seconds": 416.2,
+   "physics_ticks": 49950,
+   "frames": 101184,
+   "compared_rows": 49908,
+   "goals": 11,
+   "demolitions": 3,
+   "what": "a whole RLBot 2v2 match on Stadium_P from its first kickoff to its end (416.2 s of play, 49,950 physics ticks, 101,184 rendered frames of 0, 1 or more ticks); exercises 11 goals (goal replays, restarts), 3 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 7804463,
+   "sha256": "b5639cc25a90c9853ce83d3ad030efebc4186e9eff0487065f40e2256b23d79c"
+  },
+  {
+   "file": "2v2_stadium_08.npz",
+   "name": "2v2_stadium_08",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "Stadium_P",
+   "seconds": 321.8,
+   "physics_ticks": 38616,
+   "frames": 77137,
+   "compared_rows": 38595,
+   "goals": 1,
+   "demolitions": 2,
+   "what": "a whole RLBot 2v2 match on Stadium_P from its first kickoff to its end (321.8 s of play, 38,616 physics ticks, 77,137 rendered frames of 0, 1 or more ticks); exercises 1 goal (goal replays, restarts), 2 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 7008855,
+   "sha256": "eee6df6e7ea0275b624558203c0f9338205ce29bce8c0134e8f3b4ca646dbded"
+  },
+  {
+   "file": "2v2_stadium_09.npz",
+   "name": "2v2_stadium_09",
+   "levels": [
+    "C"
+   ],
+   "mode": "2v2",
+   "map": "Stadium_P",
+   "seconds": 358.5,
+   "physics_ticks": 43022,
+   "frames": 43054,
+   "compared_rows": 42987,
+   "goals": 1,
+   "demolitions": 1,
+   "what": "a whole RLBot 2v2 match on Stadium_P from its first kickoff to its end (358.5 s of play, 43,022 physics ticks, 43,054 rendered frames of 0, 1 or more ticks); exercises 1 goal (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 7449902,
+   "sha256": "c5d0400afa845ceec695893a06ca6505b0fb9577957c7cbb0bdbce73ef805666"
+  },
+  {
+   "file": "2v2_stadium_10.npz",
+   "name": "2v2_stadium_10",
+   "levels": [
+    "C",
+    "D"
+   ],
+   "mode": "2v2",
+   "map": "Stadium_P",
+   "seconds": 385.7,
+   "physics_ticks": 46287,
+   "frames": 46338,
+   "compared_rows": 46268,
+   "goals": 1,
+   "demolitions": 0,
+   "what": "a whole RLBot 2v2 match on Stadium_P from its first kickoff to its end (385.7 s of play, 46,287 physics ticks, 46,338 rendered frames of 0, 1 or more ticks); exercises 1 goal (goal replays, restarts), kickoff countdowns, pad pickups and boost, the match clock to its end; levels C and D (D: the random stream's start is given and the simulator chooses every spot itself; C: the spots are given)",
+   "where": "release",
+   "bytes": 8125343,
+   "sha256": "7f43dcc3d49314027e85bbd96aad0c9cfd5b2916dfa0f96ee1ce8d40e0a86bdc"
+  },
+  {
+   "file": "3v3_stadium_01.npz",
+   "name": "3v3_stadium_01",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 472.2,
+   "physics_ticks": 56662,
+   "frames": 113509,
+   "compared_rows": 56583,
+   "goals": 3,
+   "demolitions": 4,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (472.2 s of play, 56,662 physics ticks, 113,509 rendered frames of 0, 1 or more ticks); exercises 3 goals (goal replays, restarts), 4 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 14444446,
+   "sha256": "843cb163d80143fb21de6a43ad67982ffe3af0799b907ad697f33e66abb0ee75"
+  },
+  {
+   "file": "3v3_stadium_02.npz",
+   "name": "3v3_stadium_02",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 475.6,
+   "physics_ticks": 57077,
+   "frames": 114628,
+   "compared_rows": 57010,
+   "goals": 5,
+   "demolitions": 6,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (475.6 s of play, 57,077 physics ticks, 114,628 rendered frames of 0, 1 or more ticks); exercises 5 goals (goal replays, restarts), 6 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 14057543,
+   "sha256": "dcc0bc76c52a1819e82337b50be072d9ebd001f53c7869825574a3d24ff2bad9"
+  },
+  {
+   "file": "3v3_stadium_03.npz",
+   "name": "3v3_stadium_03",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 386.8,
+   "physics_ticks": 46412,
+   "frames": 93691,
+   "compared_rows": 46350,
+   "goals": 8,
+   "demolitions": 1,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (386.8 s of play, 46,412 physics ticks, 93,691 rendered frames of 0, 1 or more ticks); exercises 8 goals (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 10537372,
+   "sha256": "6d2540b69ac0938d77f06bae7993ce1d752b98ecd5a7b851505bfd762b917521"
+  },
+  {
+   "file": "3v3_stadium_04.npz",
+   "name": "3v3_stadium_04",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 378.5,
+   "physics_ticks": 45417,
+   "frames": 90793,
+   "compared_rows": 45354,
+   "goals": 7,
+   "demolitions": 4,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (378.5 s of play, 45,417 physics ticks, 90,793 rendered frames of 0, 1 or more ticks); exercises 7 goals (goal replays, restarts), 4 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 10442856,
+   "sha256": "634ebf608f98876daeb95d222985b249c2d1503f8b316aca320673fab05aa948"
+  },
+  {
+   "file": "3v3_stadium_05.npz",
+   "name": "3v3_stadium_05",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 356.3,
+   "physics_ticks": 42760,
+   "frames": 85901,
+   "compared_rows": 42666,
+   "goals": 5,
+   "demolitions": 7,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (356.3 s of play, 42,760 physics ticks, 85,901 rendered frames of 0, 1 or more ticks); exercises 5 goals (goal replays, restarts), 7 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 9940155,
+   "sha256": "a5ac071a6873d6a914bff8fbe750422fd1408b10af5fc6a92ec1d344d0091ee5"
+  },
+  {
+   "file": "3v3_stadium_06.npz",
+   "name": "3v3_stadium_06",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 336.6,
+   "physics_ticks": 40391,
+   "frames": 80318,
+   "compared_rows": 40343,
+   "goals": 3,
+   "demolitions": 2,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (336.6 s of play, 40,391 physics ticks, 80,318 rendered frames of 0, 1 or more ticks); exercises 3 goals (goal replays, restarts), 2 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 10018552,
+   "sha256": "420256ee42ac4dd45491bec3aa5d788eb8efe29b9220dff1f9d235e933978ae0"
+  },
+  {
+   "file": "3v3_stadium_07.npz",
+   "name": "3v3_stadium_07",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 393.5,
+   "physics_ticks": 47215,
+   "frames": 95369,
+   "compared_rows": 47147,
+   "goals": 9,
+   "demolitions": 4,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (393.5 s of play, 47,215 physics ticks, 95,369 rendered frames of 0, 1 or more ticks); exercises 9 goals (goal replays, restarts), 4 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 10578245,
+   "sha256": "ab09eec18026f37f5f252bb97104aa701cf18f44a99342e950663282fee9766b"
+  },
+  {
+   "file": "3v3_stadium_08.npz",
+   "name": "3v3_stadium_08",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 375.3,
+   "physics_ticks": 45041,
+   "frames": 90792,
+   "compared_rows": 44966,
+   "goals": 7,
+   "demolitions": 5,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (375.3 s of play, 45,041 physics ticks, 90,792 rendered frames of 0, 1 or more ticks); exercises 7 goals (goal replays, restarts), 5 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 10318357,
+   "sha256": "33760f78a89ab70dfc169992f8242ddb86fef93895b43da1147e9ad8a22c3abe"
+  },
+  {
+   "file": "3v3_stadium_09.npz",
+   "name": "3v3_stadium_09",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 365.3,
+   "physics_ticks": 43840,
+   "frames": 88213,
+   "compared_rows": 43767,
+   "goals": 6,
+   "demolitions": 1,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (365.3 s of play, 43,840 physics ticks, 88,213 rendered frames of 0, 1 or more ticks); exercises 6 goals (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 10156751,
+   "sha256": "bb23616ad64eda9ab5a40e5ce158aa82c643ac3a43ce768a6accfb0bcc366565"
+  },
+  {
+   "file": "3v3_stadium_10.npz",
+   "name": "3v3_stadium_10",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 340.8,
+   "physics_ticks": 40895,
+   "frames": 82002,
+   "compared_rows": 40824,
+   "goals": 3,
+   "demolitions": 3,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (340.8 s of play, 40,895 physics ticks, 82,002 rendered frames of 0, 1 or more ticks); exercises 3 goals (goal replays, restarts), 3 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 10016462,
+   "sha256": "9fc1722069416f66f691b1f79fd6aa2060db62db199887868895f64675183b0b"
+  },
+  {
+   "file": "3v3_stadium_11.npz",
+   "name": "3v3_stadium_11",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 366.2,
+   "physics_ticks": 43941,
+   "frames": 88420,
+   "compared_rows": 43873,
+   "goals": 6,
+   "demolitions": 1,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (366.2 s of play, 43,941 physics ticks, 88,420 rendered frames of 0, 1 or more ticks); exercises 6 goals (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 10389699,
+   "sha256": "355ccc8f2e8f22ae9db5812f4d818dad1bbc60ef79d9366a43f69cb7512c6738"
+  },
+  {
+   "file": "3v3_stadium_12.npz",
+   "name": "3v3_stadium_12",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 179.9,
+   "physics_ticks": 21589,
+   "frames": 43128,
+   "compared_rows": 21506,
+   "goals": 3,
+   "demolitions": 0,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (179.9 s of play, 21,589 physics ticks, 43,128 rendered frames of 0, 1 or more ticks); exercises 3 goals (goal replays, restarts), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 4966453,
+   "sha256": "ad2753b5f128ceb8c5a986e1420d40e96819551afda3c472c73153fffad8a9ed"
+  },
+  {
+   "file": "3v3_stadium_13.npz",
+   "name": "3v3_stadium_13",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 378.2,
+   "physics_ticks": 45381,
+   "frames": 89863,
+   "compared_rows": 45278,
+   "goals": 5,
+   "demolitions": 5,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (378.2 s of play, 45,381 physics ticks, 89,863 rendered frames of 0, 1 or more ticks); exercises 5 goals (goal replays, restarts), 5 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 10725280,
+   "sha256": "510b78414c6917690458ea5bac336cbbea35f99b1491c328341dc1ba3bcbd69a"
+  },
+  {
+   "file": "3v3_stadium_14.npz",
+   "name": "3v3_stadium_14",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 375.3,
+   "physics_ticks": 45041,
+   "frames": 90811,
+   "compared_rows": 44983,
+   "goals": 7,
+   "demolitions": 2,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (375.3 s of play, 45,041 physics ticks, 90,811 rendered frames of 0, 1 or more ticks); exercises 7 goals (goal replays, restarts), 2 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 10498996,
+   "sha256": "e1ef7e40865869707c0b848fbe30b549839fa7f298c4b72402118b3beba171ce"
+  },
+  {
+   "file": "3v3_stadium_15.npz",
+   "name": "3v3_stadium_15",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 379.9,
+   "physics_ticks": 45592,
+   "frames": 91714,
+   "compared_rows": 45581,
+   "goals": 5,
+   "demolitions": 1,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (379.9 s of play, 45,592 physics ticks, 91,714 rendered frames of 0, 1 or more ticks); exercises 5 goals (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 11009309,
+   "sha256": "c332e8da25f4857cfa3d1029c6720fb68406c952e6a6aedd7a20303e5a757609"
+  },
+  {
+   "file": "3v3_stadium_16.npz",
+   "name": "3v3_stadium_16",
+   "levels": [
+    "C"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 341.2,
+   "physics_ticks": 40945,
+   "frames": 41034,
+   "compared_rows": 40902,
+   "goals": 2,
+   "demolitions": 3,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (341.2 s of play, 40,945 physics ticks, 41,034 rendered frames of 0, 1 or more ticks); exercises 2 goals (goal replays, restarts), 3 demolitions (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; level C: each later kickoff's and respawn's spots are given (from the packets)",
+   "where": "release",
+   "bytes": 9851590,
+   "sha256": "5177d5ccf2f566fb16fb9fa5d2791d030433155544551ad3d2274f1964e8fb00"
+  },
+  {
+   "file": "3v3_stadium_17.npz",
+   "name": "3v3_stadium_17",
+   "levels": [
+    "C",
+    "D"
+   ],
+   "mode": "3v3",
+   "map": "Stadium_P",
+   "seconds": 327.7,
+   "physics_ticks": 39328,
+   "frames": 39413,
+   "compared_rows": 39281,
+   "goals": 2,
+   "demolitions": 1,
+   "what": "a whole RLBot 3v3 match on Stadium_P from its first kickoff to its end (327.7 s of play, 39,328 physics ticks, 39,413 rendered frames of 0, 1 or more ticks); exercises 2 goals (goal replays, restarts), 1 demolition (respawns), kickoff countdowns, pad pickups and boost, the match clock to its end; levels C and D (D: the random stream's start is given and the simulator chooses every spot itself; C: the spots are given)",
+   "where": "release",
+   "bytes": 9354389,
+   "sha256": "915e61a67fa732645d18adc37e0b7b0b67727b32066c7a4b4f2639e9bc653174"
+  }
+ ]
+}
