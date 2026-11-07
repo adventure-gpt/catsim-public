@@ -11,10 +11,14 @@ bodies). The harness supplies the flow, each piece an assist named in the result
   - after a goal, the next kickoff the same way, when the recording has it (the simulator's own goal, if it has one,
     doesn't matter: the ball's rows during a goal's replay are not scored);
   - a respawn: the car is put where the recording's packet first shows it again;
+  - a kickoff or a respawn puts a new car there (nothing carried over: jumps, flips, boosting, timers, wheel contacts)
+    with the game's spawn boost (33.3; a packet shows 33.33);
   - a game recorded at float precision: the same, and at its first float row (a few ticks after the first countdown)
-    the bodies become the game's own floats, word for word; the rest of each car's state stays what the simulator
-    built through the countdown from the same controls (a Bullet-units adapter takes the words themselves, a uu one
-    the uu values its x 0.02 turns into those words, where they exist, and is compared in uu: the words x 50);
+    and at each later kickoff's start the bodies become the game's own floats, word for word; the rest of each car's
+    state stays what the simulator built from the same controls (a Bullet-units adapter takes the words themselves, a
+    uu one the uu values its x 0.02 turns into those words, where they exist, and is compared in uu: the words x 50);
+  - an adapter that takes them (caps "tick_frames") gets each tick's frame row: the frame's render alpha and
+    duration (the game tests boost pads once per rendered frame, at its render fraction);
   - each rendered frame: its physics ticks (the frame's tick count at 120 Hz; a frame with no tick runs none), with the
     frame's controls; a jump held through a countdown is not a press when the cars go (the game's input is read all
     through the countdown, so the button is let go first, as in the game).
@@ -30,7 +34,7 @@ import math
 import numpy as np
 
 from .game import BALL_W, CAR_W, PADS, q_pos, q_vel, row_ticks
-from .state import TICK_CAR
+from .state import TICK_CAR, TICK_FRAME
 
 F32 = np.float32
 
@@ -39,9 +43,22 @@ PRESET_OF_BODY = {23: "Octane", 4906: "Octane", 5039: "Octane", 403: "Dominus", 
                   8669: "Breakout", 10697: "Breakout", 7901: "Breakout", 10698: "Breakout", 31: "Hybrid", 9427: "Hybrid",
                   7012: "Hybrid", 803: "Plank", 24: "Plank", 7052: "Plank", 30: "Merc", 4780: "Merc", 4782: "Psyclops"}
 
+# The game's boost at a spawn (a kickoff or a respawn): its config's 0.333 of a full tank. A packet shows it rounded
+# (33.33), so the harness hands the game's own amount instead.
+SPAWN_BOOST = 33.3
+
+# A spawned car is a new car: nothing from before (jumps, flips, boosting, timers, wheel contacts) carries over.
+FRESH_CAR = {"on_ground": False, "wheels_contact": [False] * 4, "has_jumped": False, "has_double_jumped": False,
+             "has_flipped": False, "is_jumping": False, "is_flipping": False, "is_auto_flipping": False,
+             "is_supersonic": False, "is_boosting": False, "is_demoed": False, "jump_ticks": 0, "flip_time": 0.0,
+             "air_time": 0.0, "air_time_since_jump": 0.0, "handbrake_val": 0.0, "supersonic_grace_timer": 0.0,
+             "time_since_boosted": 0.0, "boosting_time": 0.0, "auto_flip_timer": 0.0, "bump_cooldown_timer": 0.0,
+             "demo_respawn_timer": 0.0}
+
 ASSISTS = ["the harness supplies only the match flow the simulator lacks: each kickoff's start (cars and ball where the "
            "recording's countdown starts them, as its packet shows them: positions to 0.01 uu, velocities to 0.01 uu/s; at "
-           "float precision, the bodies then set to the game's own floats at the first float row) and the hold through the countdown, the "
+           "float precision, the bodies then set to the game's own floats at the first float row and at each later kickoff's "
+           "start; a new car with the game's spawn boost, 33.3) and the hold through the countdown, the "
            "restart after each goal when the recording has it, and each demolished car's respawn spot from the recording",
            "the simulator runs everything it models itself: physics, boost and pads, demolitions and their respawn timers, "
            "goals (its own goal, if it has one, changes nothing the harness does)",
@@ -71,11 +88,13 @@ def rotator(fwd, right, up):
 
 
 def _state_car(row):
-    """A truth car row [present, pos, vel, ang vel, rotator, boost] -> a simbench state car."""
+    """A truth car row [present, pos, vel, ang vel, rotator, boost] -> a simbench state car at a spawn (a kickoff's
+    start, a respawn): a new car with the game's spawn boost."""
     f, u = rot_vectors(row[10:13])
     right = np.cross(u, f)
-    return {"pos": [float(x) for x in row[1:4]], "vel": [float(x) for x in row[4:7]], "ang_vel": [float(x) for x in row[7:10]],
-            "fwd": f.tolist(), "right": right.tolist(), "up": u.tolist(), "boost": float(row[13])}
+    return {**FRESH_CAR, "pos": [float(x) for x in row[1:4]], "vel": [float(x) for x in row[4:7]],
+            "ang_vel": [float(x) for x in row[7:10]], "fwd": f.tolist(), "right": right.tolist(), "up": u.tolist(),
+            "boost": SPAWN_BOOST}
 
 
 def uu_of_bt(bt) -> np.ndarray:
@@ -211,6 +230,24 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.nd
     if fview is not None:
         frow[rec["float_frame"].astype(np.int64)] = np.arange(len(rec["float_frame"]))
     latch = np.zeros(nc, bool)             # jump held since a countdown: not a press until let go
+    # an adapter that takes each tick's frame row (the suite's layout): the frame's render alpha (its last tick's render
+    # fraction, the one before when the recording has none) and duration; the earlier ticks of a frame of several get
+    # -1 as their fraction (no render frame ends there: the game tests boost pads once a frame)
+    tick_frames = bool((getattr(worker, "hello", None) or {}).get("caps", {}).get("tick_frames"))
+    alpha_s = rec.get("frame_alpha")
+    ftime = rec.get("frame_time")
+    alpha = 0.5
+
+    def frame_rows(f, n):
+        nonlocal alpha
+        a = float(alpha_s[f]) if alpha_s is not None else float("nan")
+        if math.isfinite(a):
+            alpha = a
+        dt = float(ftime[f]) if ftime is not None and math.isfinite(float(ftime[f])) and float(ftime[f]) > 0 else n / 120.0
+        rows = np.zeros((n, TICK_FRAME), F32)
+        rows[:, 0], rows[:, 1], rows[0, 2] = alpha, dt, n
+        rows[:, 3], rows[-1, 3], rows[:, 4] = -1.0, alpha, -1.0
+        return rows
     # a float-precision game: the match runs from its first kickoff as at packet precision, and at its first float row
     # the bodies become the game's own floats, word for word (the rest of each car's state is what the simulator built
     # through the countdown, from the same controls)
@@ -219,13 +256,35 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.nd
     def to_floats(f):
         i = int(frow[f])
         whole = not started
-        boost = tc[int(nxt[f]) if nxt[f] >= 0 else 0, :, 13] if whole else None
+        jr = int(nxt[f]) if nxt[f] >= 0 else 0
+        boost = (np.full(nc, SPAWN_BOOST) if ph[jr] == 1 else tc[jr, :, 13]) if whole else None
         worker.request({"op": "set", "arena": arena,
                         "state": _float_bodies(rec["float_body"][i], rec["float_present"][i] > 0, boost)})
         _, data = worker.request({"op": "bodies", "arena": arena})
         return np.frombuffer(data, F32).reshape(nc + 1, 18)
+    def place(r):
+        # where the recording's countdown starts: everything put there instead of run
+        st = {"cars": [_state_car(tc[r, k]) if tc[r, k, 0] > 0.5 else {"is_demoed": True, "demo_respawn_timer": 3.0}
+                       for k in range(nc)],
+              "ball": {"pos": [float(x) for x in tb[r, 1:4]], "vel": [0.0, 0.0, 0.0], "ang_vel": [0.0, 0.0, 0.0],
+                       "fwd": [1.0, 0.0, 0.0], "right": [0.0, 1.0, 0.0], "up": [0.0, 0.0, 1.0], "asleep": False}}
+        worker.request({"op": "set", "arena": arena, "state": st})
+        _, data = worker.request({"op": "bodies", "arena": arena})
+        return np.frombuffer(data, F32).reshape(nc + 1, 18)
+    # a countdown's first row that the recording compares before any frame ends there (a recording that starts with
+    # it): put there before the first frame after it
+    framed = set(int(x) for x in judge if x >= 0)
+    early = {}
+    for r0 in sorted(kick - framed):
+        later = np.nonzero(judge > r0)[0]
+        if len(later):
+            early.setdefault(int(later[0]), []).append(r0)
     for f in range(len(judge)):
         r = int(judge[f])
+        for r0 in early.get(f, ()):
+            last = place(r0)
+            started = True
+            view[r0] = _view_of(last, units, nc)
         if f == float_start and not started:
             # a float row before any kickoff: the simulator starts there
             last = to_floats(f)
@@ -237,15 +296,10 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.nd
             continue
         if r in kick:
             # this frame ends where the recording's countdown starts: put everything there instead of running it
-            st = {"cars": [_state_car(tc[r, k]) if tc[r, k, 0] > 0.5 else {"is_demoed": True, "demo_respawn_timer": 3.0}
-                           for k in range(nc)],
-                  "ball": {"pos": [float(x) for x in tb[r, 1:4]], "vel": [0.0, 0.0, 0.0], "ang_vel": [0.0, 0.0, 0.0],
-                           "fwd": [1.0, 0.0, 0.0], "right": [0.0, 1.0, 0.0], "up": [0.0, 0.0, 1.0], "asleep": False}}
-            worker.request({"op": "set", "arena": arena, "state": st})
+            last = place(r)
             started = True
-            _, data = worker.request({"op": "bodies", "arena": arena})
-            last = np.frombuffer(data, F32).reshape(nc + 1, 18)
-            if f == float_start:
+            if fview is not None and frow[f] >= 0:
+                # at float precision, a later kickoff's start is the game's own floats (the first one: see to_floats)
                 last = to_floats(f)
                 fview[frow[f]] = _given_float(rec, int(frow[f]), units)
             view[r] = _view_of(last, units, nc)
@@ -262,7 +316,12 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None) -> np.nd
                 latch |= held
             latch &= held
             inp[latch, 5] = 0.0
-            _, data = worker.request({"op": "step", "arena": arena, "cars": nc, "ticks": int(steps[f])}, inp.tobytes())
+            req = {"op": "step", "arena": arena, "cars": nc, "ticks": int(steps[f])}
+            body = inp.tobytes()
+            if tick_frames:
+                req["tick_frames"] = True
+                body += frame_rows(f, int(steps[f])).tobytes()
+            _, data = worker.request(req, body)
             last = np.frombuffer(data, F32).reshape(nc + 1, 18)
         if f == float_start:
             last = to_floats(f)

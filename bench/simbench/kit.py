@@ -26,6 +26,8 @@ class Adapter:
     "not supported" for this simulator, never guessed:
       levels        accuracy levels it can start from: "packet" (B1), "v3" (B2), "rlpr", "full" (A)
       frame_timing  it takes each frame's real duration and render alpha (`step(..., frame=...)`)
+      tick_frames   on the harness's flow (whole games), each tick's frame row too (`step(..., ticks=1, frame=row)`, the
+                    layout of simbench.state.TICK_FRAME, as the suite's segments give it)
       game_flow     it runs the game's own countdowns, goals, kickoffs and respawns over a whole recording (level C)
       rng_stream    it predicts kickoff and respawn spots from the game's random-number state (level D)
       spot_choices  it takes kickoff and respawn spots handed to it (level C's assist)
@@ -184,8 +186,14 @@ def serve(adapter: Adapter) -> None:
             elif op == "step":
                 a = arenas[req["arena"]]
                 c = int(req["cars"])
-                inputs = np.frombuffer(payload, np.float32).reshape(c, TICK_CAR)
-                adapter.step(a, inputs, int(req.get("ticks", 1)))
+                n = int(req.get("ticks", 1))
+                inputs = np.frombuffer(payload[:c * TICK_CAR * 4], np.float32).reshape(c, TICK_CAR)
+                if req.get("tick_frames"):      # each tick's frame row after the inputs: the ticks one at a time
+                    rows = np.frombuffer(payload[c * TICK_CAR * 4:], np.float32).reshape(n, TICK_FRAME)
+                    for t in range(n):
+                        adapter.step(a, inputs, 1, rows[t])
+                else:
+                    adapter.step(a, inputs, n)
                 protocol.send(out, {}, np.ascontiguousarray(adapter.bodies(a), np.float32).tobytes())
             elif op == "bodies":
                 protocol.send(out, {}, np.ascontiguousarray(adapter.bodies(arenas[req["arena"]]), np.float32).tobytes())

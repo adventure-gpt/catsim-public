@@ -46,13 +46,15 @@ class RocketGPU(Adapter):
     name = "rocketgpu"
     units = "bt"
     caps = {"levels": ["full", "v3", "packet"], "frame_timing": False, "game_flow": False, "rng_stream": False,
-            "spot_choices": False, "threads": True, "threads_at_setup": True}
+            "spot_choices": False, "threads": True, "threads_at_setup": True, "tick_frames": True}
     choices = [
         "speed: BatchSim, one simulator for all arenas; 8 ticks' controls a call (step_with_device_controls); "
         "boost pads, car-car collisions, demos and scoring on; states stay in the simulator",
         "full-state start: set_full_state with every suite field, after the segment's own calls and mutators (as the suite runs it)",
         "public-state start: set_state_v3 (v3's CarState field for field) and the ball's sleep flag through the full state",
         "per tick: driving_disabled, the ball's 2D hold, the frame's render fraction and start time, pad credits",
+        "whole games: each tick's render fraction from the recording's frames (pads tested once a rendered frame); a "
+        "float-precision start's Bullet words written into its body fields",
     ]
 
     def __init__(self):

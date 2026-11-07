@@ -130,6 +130,13 @@ def score_float(rec: dict, fview: np.ndarray, units: str = "bt") -> dict:
         t[..., 12:15] = (t[..., 12:15] * F32(50.0)).astype(F32)
     w = np.ascontiguousarray(t, F32).view(np.uint32)
     off = (sim_p != p) | (p & sim_p & (sim_w != w).any(-1))
+    # a goal's reset frame (its last goal row, the countdown next): the recorder samples it after the round reset has
+    # run and before the next frame's physics, between the old bodies and the new; which bodies exist there is the
+    # sampling's, not the simulation's, so only the bodies both have are compared
+    fp = rec["float_phase"]
+    reset = np.zeros(R, bool)
+    reset[:-1] = (fp[:-1] == 4) & (fp[1:] == 1)
+    off[reset] = (p & sim_p & (sim_w != w).any(-1))[reset]
     bad = off.any(-1)
     judged = rec["float_phase"] != 4
     idx = np.nonzero(bad & judged)[0]
