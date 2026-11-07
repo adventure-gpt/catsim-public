@@ -877,6 +877,11 @@ def pct2(x: float, all_exact: bool) -> str:
     return f"{x:.4f}%" if x >= 99.9 else f"{x:.2f}%"
 
 
+# a simulator's other build of the same code, for a run that covered part of the suite on one of them
+TWIN = {"rocketgpu": "rocketgpu-cpu", "rocketgpu-cpu": "rocketgpu"}
+TWIN_NAME = {"rocketgpu": "CPU", "rocketgpu-cpu": "CUDA"}
+
+
 def whole_line(sm: dict, r: dict, floats: bool) -> str:
     """The small line under a whole-games cell."""
     ex, n = sm["exact_to_the_end"], sm["recordings"]
@@ -939,7 +944,13 @@ def model(recs) -> dict:
                 small = "of body-ticks exact" if lv == "A" else f"{a['segment_pass']:.2f}% within tolerance"
                 most = max(p["summary"]["all"]["body_ticks"] for p in peers)
                 recs_most = max(p["summary"]["all"]["recordings"] for p in peers)
-                if a["recordings"] < recs_most:
+                twin = next((p for p in peers if p.get("sim") == TWIN.get(s)), None) if a["recordings"] < recs_most else None
+                mine, theirs = r.get("per_recording") or {}, (twin or {}).get("per_recording") or {}
+                if twin and mine and all(theirs.get(k) == v for k, v in mine.items()):
+                    # part of the suite on this build, and every recording it ran gives what the twin build gives
+                    small += (f"; measured on {a['recordings']} of {recs_most} recordings; identical to its "
+                              f"{TWIN_NAME[s]} build on every recording both ran")
+                elif a["recordings"] < recs_most:
                     # a run on some of the suite's splits: which, and how much of the suite that is
                     sp = sorted(k for k in r["summary"] if k != "all")
                     small += (f"; the {' and '.join(sp)} split{'s' if len(sp) != 1 else ''} only: {a['recordings']} of "
