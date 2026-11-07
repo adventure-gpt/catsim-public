@@ -75,7 +75,7 @@ def main(argv=None) -> None:
     ap.add_argument("--seed", type=int, default=1106)
     ap.add_argument("--device", choices=["cpu", "gpu"], help="(speed) only simulators on this device")
     ap.add_argument("--only", help="(speed) only these rows, as mode:arenas:threads[,...] (e.g. 3v3:1024:16)")
-    ap.add_argument("--suite-data", help="(suite) the full-state suite's data folder (its README says how to get it)")
+    ap.add_argument("--suite-data", help="(suite) the RocketGPU full-state suite's data folder (its README says how to get it)")
     ap.add_argument("--levels", help="which of the benchmark's starts to run: full, public, packet (suite); spots, stream "
                     "(recordings); or the ids A, B, Bp, C, D (default: all the benchmark has)")
     ap.add_argument("--splits", default="all", help="(suite) which of its splits, or recording names")
@@ -115,7 +115,7 @@ def main(argv=None) -> None:
         elif b == "suite":
             from . import suite
             if not a.suite_data:
-                print("  skipped: give --suite-data (the full-state suite's recordings; docs/BENCHMARKS.md says where)")
+                print("  skipped: give --suite-data (the RocketGPU full-state suite's recordings; docs/BENCHMARKS.md says where)")
                 continue
             suite.run(names, env, Path(a.suite_data), a.levels, a.splits, a.limit, a.jobs or max(1, a.threads // 2), out, res.emit)
         elif b == "rlpr":

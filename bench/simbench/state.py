@@ -5,7 +5,7 @@ null (and a missing ball) is left as it is: the whole-game runner places one car
 game's: positions uu, velocities uu/s, angular velocities rad/s, rotations as forward / right / up unit vectors, boost
 0 to 100. Which keys a car carries depends on the level (below); an adapter sets every key it can and ignores the rest.
 
-Level B "v3": the public state, RocketSim v3's whole `CarState` (the full-state suite's "public" rows): pos, fwd, right,
+Level B "v3": the public state, RocketSim v3's whole `CarState` (the RocketGPU full-state suite's "public" rows): pos, fwd, right,
     up, vel, ang_vel, boost, on_ground, has_jumped, has_double_jumped, has_flipped, is_supersonic, is_demoed,
     demo_respawn_timer, flip_rel_torque, jump_ticks, flip_time, is_flipping, is_jumping, jump_hold_broken, air_time,
     air_time_since_jump, handbrake_val, supersonic_grace_timer, time_since_boosted, boosting_time, is_boosting,
@@ -21,7 +21,7 @@ Level B "packet" (a variant of B): only the fields an RLBot v5 packet lists, unr
 Level "rlpr": an RLPR recording's tick record (RocketSim's rlpr_metric): the packet's fields with exact floats plus
     jump_time, flip_time, is_jumping, is_flipping, flip_rel_torque, double_jumped_or_flipped, has_flip, wheels_contact,
     wheel_normals, world_contact, world_contact_normal, prev_controls, boosting_time, is_boosting, handbrake_val.
-Level A "full": everything the game holds, in the full-state suite's own field layout: `start["full"]` names byte ranges
+Level A "full": everything the game holds, in the RocketGPU full-state suite's own field layout: `start["full"]` names byte ranges
     of the request's payload (`{"field": [offset, length]}`, the suite's `s.*` arrays). Only adapters that map that
     layout take it.
 

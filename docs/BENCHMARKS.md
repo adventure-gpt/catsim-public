@@ -35,7 +35,7 @@ simulator. The numbers here use the dump of Steam build 26349479, which holds th
 | Benchmark | Command (from `bench/`) | Takes | Download first |
 |---|---|---|---|
 | Whole games | `python -m simbench recordings --sims catsim-py,rocketsim-v3` | 1-10 min per simulator | our recordings (one is in git; the rest from the release, below) |
-| The full-state suite (full state, public state, packet fields) | `python -m simbench suite --sims catsim,rocketsim-v3 --suite-data PATH` | 5-15 min per simulator and start | the suite's recordings (863 MB, below) |
+| The RocketGPU full-state suite (full state, public state, packet fields) | `python -m simbench suite --sims catsim,rocketsim-v3 --suite-data PATH` | 5-15 min per simulator and start | the suite's recordings (863 MB, below) |
 | RocketSim's own replay test | `python -m simbench rlpr --sims catsim,rocketsim-v3` | 5 min to build, 2 min per simulator | nothing (RocketSim is fetched at its pinned release, 700 MB) |
 | Speed (CPU and GPU tables) | `python -m simbench speed --sims catsim,rocketsim-v3` | 15-25 min (`--plan quick`: 3 min) | nothing |
 | Everything | `python -m simbench all --sims ... --suite-data PATH` | about an hour | both |
@@ -48,7 +48,7 @@ package, which runs whole games); the summary shows them as one column, footnoti
 `--levels` picks the starts: `full`, `public`, `packet` for the suite, `spots`, `stream` for whole games (the results
 call them A, B, Bp, C, D, and Cf, Df at float precision).
 
-- **The full-state suite**: github.com/thecosmicskye/RocketGPU-fullstate-suite. The numbers here use its release v2
+- **The RocketGPU full-state suite**: github.com/thecosmicskye/RocketGPU-fullstate-suite. The numbers here use its release v2
   (144 recordings, 26,378 segments). Download its recordings as its README says (`gh release download v2 -R
   thecosmicskye/RocketGPU-fullstate-suite`, then `tar xf` and check `data.sha256`), and give the folder that holds
   `data/` and `manifest.json` as `--suite-data`. The suite is AGPL-3.0; this repository holds none of its code or
@@ -76,7 +76,7 @@ Our own recordings: real RLBot matches recorded from the game, each from its fir
 simulator runs the whole match from the state at the first kickoff, with nothing reloaded until the end. Scored at
 every packet row to the end of the match: positions, velocities, angular velocities and the integer rotation, as the
 game rounds them for its packets. The table gives games exact to the end, rows exact, the time to the first drift
-(median and range over the recordings), and the full-state suite's normalized error 1, 5 and 30 s after each kickoff
+(median and range over the recordings), and the RocketGPU full-state suite's normalized error 1, 5 and 30 s after each kickoff
 (0 is exact; 10 is the cap).
 
 - **The game's kickoff and respawn spots given.** Given: the state at the first kickoff, then only each frame's
@@ -106,7 +106,7 @@ kind of assist as the full-state start's hidden physics state.
 
 ### Physics only, started from the game's full internal state
 
-Each of the full-state suite's 26,378 segments runs like this: a fresh arena with the recording's cars, the segment's
+Each of the RocketGPU full-state suite's 26,378 segments runs like this: a fresh arena with the recording's cars, the segment's
 start state, then the game's recorded inputs for up to 120 ticks. The inputs are each car's controls, whether the game
 let it drive, the boost pads the game credited, and each rendered frame's duration and render fraction. Every car and
 the ball are compared with the game's own state after every tick (outside held ticks and a spawn segment's first
@@ -216,7 +216,7 @@ doesn't set, a setting), please send a fix as an issue or a pull request against
 ## What isn't claimed
 
 - Speed depends on the machine, the load and the workload, so run it on yours. The tables say which machine.
-- The full-state suite and RLPR recordings were made with their recorders, on the builds they were made on. catSim's
+- The RocketGPU full-state suite and RLPR recordings were made with their recorders, on the builds they were made on. catSim's
   numbers use game data from its dumper (the Steam build named above).
 - The public-state and packet-field starts measure physics plus each adapter's guesses of the hidden state.
 - The whole games run on our own recordings only (the suite's recordings carry no random-stream state).
@@ -225,7 +225,7 @@ doesn't set, a setting), please send a fix as an issue or a pull request against
 
 simbench, the adapters, the workers and the bridge are MIT, like the rest of this repository. RocketSim (MIT),
 RocketGPU (MIT) and RLMAX (MIT) are used through their own published interfaces and installed by you. The harness
-fetches RocketSim's checkout for rlpr_metric at its pinned release. The full-state suite is AGPL-3.0: none of its code
+fetches RocketSim's checkout for rlpr_metric at its pinned release. The RocketGPU full-state suite is AGPL-3.0: none of its code
 or data is here, and you download its recordings yourself. Our recordings are ours, recorded from the real game
 (offline RLBot matches on the Steam edition, at the 120 fps lock, early November 2026); they hold only what a replay
 needs: the start, the frames' inputs and timing, the random choices or the random stream's start, the packet rows

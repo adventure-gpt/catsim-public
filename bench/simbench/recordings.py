@@ -16,7 +16,7 @@ harness runs the match flow (kickoffs, countdowns, restarts, respawns) and the s
 named. Level D tests predicting the game's own random draws from its random stream, which only a simulator that runs
 the game's flow can do; handing the draws over is level C.
 
-The full-state suite's recordings could run whole too (level C only: they hold no random-stream state); that needs the
+The RocketGPU full-state suite's recordings could run whole too (level C only: they hold no random-stream state); that needs the
 suite's full start state in the "game" request and isn't built yet.
 """
 from __future__ import annotations

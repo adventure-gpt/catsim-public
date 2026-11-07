@@ -1,4 +1,4 @@
-"""Any simbench simulator as a worker for the full-state suite's own RocketSim v3 harness (its `score_v3.py`).
+"""Any simbench simulator as a worker for the RocketGPU full-state suite's own RocketSim v3 harness (its `score_v3.py`).
 
     python -m simbench.fs_worker catsim [--data catsim_data] [--meshes collision_meshes]
 

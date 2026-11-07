@@ -1,4 +1,4 @@
-//! Level A for catSim: the full-state suite's start state (its `s.*` arrays, RocketGPU's field layout) mapped into
+//! Level A for catSim: the RocketGPU full-state suite's start state (its `s.*` arrays, RocketGPU's field layout) mapped into
 //! catSim's arena, the contact memory included (the broadphase's pair order, the manifolds' order and their cached
 //! points, translated from RocketGPU's layout into catSim's, `Full::contacts`). docs/BENCHMARKS.md lists every field.
 

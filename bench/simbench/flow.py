@@ -246,7 +246,7 @@ HORIZONS = (1.0, 5.0, 30.0)
 
 
 def kickoff_errors(rec: dict, view: np.ndarray) -> dict:
-    """The full-state suite's normalized error (per car: the square root of the sum of squares of the car's and the
+    """The RocketGPU full-state suite's normalized error (per car: the square root of the sum of squares of the car's and the
     ball's terms, position / 2 uu, velocity / 3 uu/s, angular velocity / 0.05 rad/s, forward / 0.05, up / 0.05; capped at
     10) 1, 5 and 30 s after each kickoff (the countdown's end), averaged over the cars and the kickoffs that last that long
     without a goal. Returns {seconds: [sum, count]}."""

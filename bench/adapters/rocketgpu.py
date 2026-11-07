@@ -7,7 +7,7 @@ tools/pgo_build.sh). ROCKETGPU_COLLISION_MESH_DIR is set from the harness's coll
 Speed: its batched path, `BatchSim` (all arenas in one simulator): every decision the 8 ticks' controls go in one call,
 `step_with_device_controls` (a device buffer on the CUDA build, a host array on the CPU build); the states stay where
 the simulator keeps them (on the card for CUDA; read through its host view on the CPU build).
-Accuracy: its RocketSim-style `Arena` (one arena): level A through `set_full_state` with the full-state suite's fields,
+Accuracy: its RocketSim-style `Arena` (one arena): level A through `set_full_state` with the RocketGPU full-state suite's fields,
 the suite's per-segment calls and mutators replayed first; level B through `set_state_v3` (RocketSim v3's CarState,
 field for field) and the ball's sleep through its full state. Per tick, as the suite runs RocketGPU: cars the game holds
 through `driving_disabled`, the ball held while every car is, each frame's render fraction and start time through the

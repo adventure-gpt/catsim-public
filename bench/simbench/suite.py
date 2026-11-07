@@ -1,4 +1,4 @@
-"""Levels A and B on the full-state suite's recordings (github.com/thecosmicskye/RocketGPU-fullstate-suite).
+"""Levels A and B on the RocketGPU full-state suite's recordings (github.com/thecosmicskye/RocketGPU-fullstate-suite).
 
 You download the recordings yourself (its README); this file only reads them. It is our own scorer, written from the
 suite's README (the protocol and the metric definitions), and imports nothing of the suite's.

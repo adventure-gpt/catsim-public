@@ -226,7 +226,7 @@ def glance(recs) -> list[str]:
             continue
         rows.sort(key=lambda r: -r["summary"]["all"]["exact_body_ticks"])
         segs = max(r["summary"]["all"]["segments"] for r in rows)
-        out.append(f"- **{LEVELS[lv][0]}** ({segs:,} segments of the full-state suite): "
+        out.append(f"- **{LEVELS[lv][0]}** ({segs:,} segments of the RocketGPU full-state suite): "
                    + "; ".join(f"{nice(r['sim'])} {r['summary']['all']['exact_body_ticks']:.4f}% of body-ticks exact" for r in rows) + ".")
     sp = latest([r for r in recs if r.get("kind") == "speed" and r.get("status") == "ok"], lambda r: (r["sim"], r.get("mode"), r.get("arenas"), r.get("threads")))
     cpu = [r for r in sp.values() if r.get("device", "cpu") == "cpu" and r.get("arenas") == 1024 and r.get("mode") == "1v1"]
@@ -401,7 +401,7 @@ def charts(recs, out: Path) -> list[Path]:
         if acc:
             levels = [lv for lv in ("A", "B") if any(k[1] == lv for k in acc)]
             series = sim_sort({k[0] for k in acc})
-            fig, ax = axes("Accuracy on the full-state suite: bit-exact body-ticks", "% of body-ticks exact")
+            fig, ax = axes("Accuracy on the RocketGPU full-state suite: bit-exact body-ticks", "% of body-ticks exact")
             get = lambda s, lv: acc[(s, lv)]["summary"]["all"]["exact_body_ticks"] if (s, lv) in acc else None
             bars(ax, levels, series, get, lambda y: f"{y:.1f}")
             ax.set_xticklabels([LEVELS[lv][1].capitalize() + " given" for lv in levels], color=ink, fontsize=9)
@@ -491,7 +491,7 @@ def detail_tables(recs) -> list[str]:
         if level in WHOLE:
             out.append("Scored: every compared packet row to the end of the recording (positions, velocities, rotation, as "
                        "the game rounds them; boost and pads too when the simulator runs the match itself), the time to the "
-                       "first drift, and the full-state suite's normalized error 1, 5 and 30 s after each kickoff.\n")
+                       "first drift, and the RocketGPU full-state suite's normalized error 1, 5 and 30 s after each kickoff.\n")
             out.append("| simulator | match flow | recordings | exact to the end | packet rows exact | first drift: median (range) "
                        "| error 1 s / 5 s / 30 s |")
             out.append("|---|---|---:|---:|---:|---|---|")
@@ -592,14 +592,18 @@ def build(recs, charts_rel: str | None = None, chart_files=()) -> dict:
             pics.append(f'<picture><source media="(prefers-color-scheme: dark)" srcset="{charts_rel}/{base}_dark.png">'
                         f'<img alt="{base.replace("_", " ")}" src="{charts_rel}/{base}_light.png" width="720"></picture>')
             pics.append("")
+    m = model(recs)
     return {"glance": glance(recs), "summary": summary, "charts": pics, "speed": speed_tables(recs), "details": detail_tables(recs),
-            "adapters": adapters_section(recs), "machines": machines(recs)}
+            "adapters": adapters_section(recs), "machines": machines(recs), "model": m,
+            "accuracy": md_accuracy(m), "panels": md_speed(recs), "subtitle": subtitle(recs)}
 
 
 def markdown(sec: dict) -> str:
-    text = ["# Benchmark results\n", "## At a glance\n"] + sec["glance"] + sec["charts"][:2] + ["## Summary\n"] + sec["summary"]
-    text += sec["charts"][2:] + ["Machine:\n"] + sec["machines"] + [""]
-    text += ["## Speed\n"] + sec["speed"] + ["## Details\n"] + sec["details"] + ["## The simulators and their adapters\n"] + sec["adapters"]
+    """report.md, in the page's order: the accuracy table, the speed panels, then every detail."""
+    text = ["# Rocket League simulator benchmark\n", sec["subtitle"] + "\n", "## Accuracy\n"] + sec["accuracy"]
+    text += ["## Speed\n"] + sec["panels"] + sec["charts"] + ["## Every number in detail\n"] + sec["details"]
+    text += ["## Speed: every row\n"] + sec["speed"] + ["## The simulators and their adapters\n"] + sec["adapters"]
+    text += ["Machine:\n"] + sec["machines"] + [""]
     return "\n".join(text)
 
 
@@ -675,9 +679,9 @@ def fill_doc(doc: Path, sec: dict, charts_dir: Path, made) -> None:
         shutil.copy2(c, dest / Path(c).name)
     rel = build_rel = "bench"
     pics = [l.replace("charts/", f"{rel}/") for l in sec["charts"]]
-    parts = {"summary": ["## At a glance\n"] + sec["glance"] + pics[:2] + ["## Summary\n"] + sec["summary"] + pics[2:]
+    parts = {"summary": [sec["subtitle"] + "\n", "## Accuracy\n"] + sec["accuracy"] + ["## Speed\n"] + sec["panels"] + pics
                         + ["", "Machine:", ""] + sec["machines"],
-             "details": ["## Speed\n"] + sec["speed"] + ["## Every benchmark in detail\n"] + sec["details"]
+             "details": ["## Every number in detail\n"] + sec["details"] + ["## Speed: every row\n"] + sec["speed"]
                         + ["## The simulators and their adapters\n"] + sec["adapters"]}
     for name, lines in parts.items():
         a, b = GEN.format(name), END.format(name)
@@ -714,11 +718,338 @@ def main(out: Path, doc: Path | None = None, quiet: bool = False) -> None:
     for c in made:
         base, theme = Path(c).stem.rsplit("_", 1)
         images.setdefault(base, ["", ""])[0 if theme == "light" else 1] = base64.b64encode(Path(c).read_bytes()).decode()
-    (out / "report.html").write_text(to_html(md, {k: tuple(v) for k, v in images.items()}), encoding="utf-8")
+    (out / "report.html").write_text(page_html(recs, sec, sec["model"]), encoding="utf-8")
     if doc:
         fill_doc(Path(doc), sec, out / "charts", made)
-    print("\n== at a glance\n" + "\n".join(sec["glance"]) + "\n== summary\n" + "\n".join(sec["summary"]))
+    print("\n== at a glance\n" + "\n".join(sec["glance"]) + "\n== accuracy\n" + "\n".join(sec["accuracy"]))
     if not quiet:
         print("\n" + "\n".join(sec["speed"]))
     print(f"report: {out / 'report.md'}\n        {out / 'report.html'} (open it in a browser)"
           + "".join(f"\n        {c}" for c in made))
+
+
+# ---------------------------------------------------------------- the page: one accuracy table, the speed panels
+
+COLS = ["catsim", "rocketgpu-cpu", "rocketgpu", "rocketsim-v3", "rocketsim-v2", "rlmax"]
+COL_NAMES = {"catsim": "catSim", "rocketgpu-cpu": "RocketGPU (CPU)", "rocketgpu": "RocketGPU (CUDA)", "rocketsim-v3": "RocketSim v3",
+             "rocketsim-v2": "RocketSim v2", "rlmax": "RLMAX"}
+SUITE_NAME = {"full-state suite": "the RocketGPU full-state suite (v2)", "our recordings": "our recorded matches"}
+# (short label, one-line description; {n} is the count of games or segments)
+ROWS = {
+    "C": ("Kickoff and respawn spots given", "{n} recorded matches, compared at packet precision"),
+    "D": ("Only the random stream's initial state given", "{n} recorded matches; the simulator picks every spot itself"),
+    "Cf": ("At float precision, spots given", "{n} captured matches, every body's internal floats after every frame"),
+    "Df": ("At float precision, only the random stream's initial state given", "{n} captured matches, internal floats"),
+    "A": ("Started from the game's full internal state", "physics only: nothing to guess"),
+    "B": ("Started from the public state", "what a packet shows + RocketSim v3's timers; the rest is guessed"),
+    "Bp": ("Started from packet fields only", "only what an RLBot packet lists"),
+    "rlpr": ("RocketSim's own replay test", "rlpr_metric, unchanged; 120-tick segments"),
+}
+SHORT_WHY = {"A": "can't load the full state", "B": "can't take this start state", "Bp": "can't take this start state",
+             "D": "doesn't model the game's random stream", "Df": "doesn't model the game's random stream"}
+
+
+def pct2(x: float, all_exact: bool) -> str:
+    """A percentage to 2 decimals that never rounds a miss up to 100.00%."""
+    s = f"{x:.2f}%"
+    return "99.99%" if s == "100.00%" and not all_exact else s
+
+
+def model(recs) -> dict:
+    """The accuracy table as cells: per (level, simulator) a dict (v, s, cls), plus the notes under the table."""
+    acc = merged_acc(recs)
+    cols = COLS + [s for s in sim_sort({k[0] for k in acc}) if s not in COLS]
+    levels = [lv for lv in ORDER_LEVELS if any(k[1] == lv for k in acc)]
+    notes, cells, counts = [], {}, {}
+    for lv in levels:
+        peers = [r for k, r in acc.items() if k[1] == lv and r.get("status") == "ok"]
+        if lv in WHOLE:
+            counts[lv] = max((r["summary"]["recordings"] for r in peers), default=0)
+        elif lv != "rlpr":
+            counts[lv] = max((r["summary"]["all"]["segments"] for r in peers), default=0)
+        for s in cols:
+            r = acc.get((s, lv))
+            if r is None:
+                cells[(lv, s)] = {"v": "not run", "s": "", "cls": "pend"}
+                continue
+            if r.get("status") == "not supported":
+                cells[(lv, s)] = {"v": "—", "s": SHORT_WHY.get(lv) or clean(r.get("why", "")), "cls": "na"}
+                continue
+            if r.get("status") != "ok":
+                cells[(lv, s)] = {"v": r.get("status", "not run"), "s": clean(r.get("why", ""))[:80], "cls": "pend"}
+                continue
+            who = COL_NAMES.get(s, nice(s))
+            if r.get("binding"):
+                notes.append(f"{who}'s whole games run through {nice(r['binding'])}, its binding that runs whole matches.")
+            if lv in WHOLE:
+                sm = r["summary"]
+                ex, n = sm["exact_to_the_end"], sm["recordings"]
+                if ex == n:
+                    small = "exact to the end"
+                elif lv in ("Cf", "Df"):
+                    small = f"{sm['exact_pct']:.2f}% of float rows exact"
+                else:
+                    small = f"first drift after {(sm.get('first_drift_s') or {}).get('median', 0):.1f} s (median)"
+                if n < counts[lv]:
+                    small += f"; {n} of {counts[lv]} matches"
+                cls = "exact" if ex == n else "near" if n > 1 and ex == n - 1 else ""
+                cells[(lv, s)] = {"v": f"{ex} / {n}", "s": small, "cls": cls}
+                if sm.get("bodies_only"):
+                    notes.append(f"{who}'s whole games: the harness supplies the match flow it lacks (kickoff starts and the "
+                                 "countdown hold, restarts after goals, respawn spots); it runs its own physics, pads, boost and "
+                                 "demolitions; scored on bodies only.")
+            elif lv == "rlpr":
+                a = r["results"]["segments_120"]["total"]
+                cells[(lv, s)] = {"v": f"{a['pass_pct']:.2f}%", "s": f"of car-ticks within tolerance; mean error {a['mean_norm']:.2f}", "cls": ""}
+            else:
+                a = r["summary"]["all"]
+                allx = a["exact_body_ticks"] >= 100.0 and a["exact_segments"] >= 100.0
+                small = "of body-ticks exact" if lv == "A" else f"{a['segment_pass']:.2f}% within tolerance"
+                most = max(p["summary"]["all"]["body_ticks"] for p in peers)
+                if a["body_ticks"] < most:
+                    small += f"; scored on {a['body_ticks'] / 1e6:.1f}M of {most / 1e6:.1f}M body-ticks"
+                cls = "exact" if allx else "near" if a["exact_body_ticks"] >= 99.0 else ""
+                cells[(lv, s)] = {"v": pct2(a["exact_body_ticks"], allx), "s": small, "cls": cls}
+    seg_bt = max((r["summary"]["all"]["body_ticks"] for k, r in acc.items() if k[1] in ("A", "B", "Bp") and r.get("status") == "ok"), default=0)
+    return {"cols": cols, "levels": levels, "cells": cells, "counts": counts, "notes": list(dict.fromkeys(notes)), "seg_bt": seg_bt}
+
+
+def groups(m) -> list:
+    out = []
+    whole = [lv for lv in m["levels"] if lv in WHOLE]
+    seg = [lv for lv in m["levels"] if lv not in WHOLE]
+    if whole:
+        out.append(("Whole games: the simulator runs each match from the first kickoff to the end", whole))
+    if seg:
+        n = max((m["counts"].get(lv, 0) for lv in seg), default=0)
+        out.append((f"Segments: the RocketGPU full-state suite (v2), {n:,} segments of up to 120 ticks, "
+                    f"{m['seg_bt'] / 1e6:.1f}M body-ticks", seg))
+    return out
+
+
+GLOSSARY = [("Exact", "Position, velocity, spin and rotation bit-for-bit equal to the game's."),
+            ("Within tolerance", "Off by less than about 2 units of position or 3 units/s of speed (the RocketGPU full-state "
+                                 "suite's own measure: under 1 on its normalized error)."),
+            ("First drift", "The time into a match until the simulator first differs from the game."),
+            ("—", "The simulator can't run this test; the reason is under the dash.")]
+
+
+def speed_panels(recs) -> list:
+    """(title, [(name, value, fraction of the panel's fastest)], gpu) for the page's bar panels."""
+    sp = latest([r for r in recs if r.get("kind") == "speed" and r.get("status") == "ok"], lambda r: (r["sim"], r.get("mode"), r.get("arenas"), r.get("threads")))
+    out = []
+    cpu = [r for r in sp.values() if r.get("device", "cpu") == "cpu" and r.get("arenas") == 1024]
+    if cpu:
+        t = max(r["threads"] for r in cpu)
+        for mode in ("1v1", "3v3"):
+            rows = sorted((r for r in cpu if r["mode"] == mode and r["threads"] == t), key=lambda r: -r["arena_ticks_per_s"])
+            if rows:
+                top = rows[0]["arena_ticks_per_s"]
+                out.append((f"CPU · 1,024 arenas of {mode} · {t} threads",
+                            [(COL_NAMES.get(r["sim"], nice(r["sim"])), r["arena_ticks_per_s"], r["arena_ticks_per_s"] / top) for r in rows], False))
+    gpu = [r for r in sp.values() if r.get("device") == "gpu"]
+    if gpu:
+        n = max(r["arenas"] for r in gpu)
+        rows = sorted((r for r in gpu if r["arenas"] == n), key=lambda r: -r["arena_ticks_per_s"])
+        top = rows[0]["arena_ticks_per_s"]
+        g = (rows[0].get("machine") or {}).get("gpus") or ["GPU"]
+        out.append((f"GPU · {n:,} arenas · {g[0].split(',')[0].replace('NVIDIA GeForce ', '')}",
+                    [(f"{COL_NAMES.get(r['sim'], nice(r['sim']))} · {r['mode']}", r["arena_ticks_per_s"], r["arena_ticks_per_s"] / top) for r in rows], True))
+    return out
+
+
+def busy_any(recs) -> bool:
+    for r in latest([r for r in recs if r.get("kind") == "speed" and r.get("status") == "ok"], lambda r: (r["sim"], r.get("mode"), r.get("arenas"), r.get("threads"))).values():
+        for x in r.get("load") or []:
+            if (x.get("other_cores") or 0) > BUSY_CORES or x.get("other_gpu_processes"):
+                return True
+    return False
+
+
+def subtitle(recs) -> str:
+    ms = [r["machine"] for r in recs if r.get("machine")]
+    if not ms:
+        return "The same tests for every simulator."
+    m = Counter(json.dumps(x, sort_keys=True) for x in ms).most_common(1)[0][0]
+    m = json.loads(m)
+    cpu = re.sub(r"\(R\)|\(TM\)|CPU|@.*|11th Gen ", "", m["cpu"]).strip()
+    gpu = next((g.split(",")[0].replace("NVIDIA GeForce ", "NVIDIA ") for x in ms for g in (x.get("gpus") or [])), None)
+    when = max((r.get("when", "")[:10] for r in recs), default="")
+    return (f"The same tests for every simulator, on one machine: {cpu} ({m['threads']} threads)"
+            + (f", {gpu}" if gpu else "") + (f", {when}" if when else "") + ".")
+
+
+def desc_of(lv, m) -> str:
+    n = m["counts"].get(lv, 0)
+    d = ROWS[lv][1].format(n=n)
+    return d.replace("matches", "match") if n == 1 else d
+
+
+def md_accuracy(m) -> list[str]:
+    """The accuracy table in Markdown: one primary number per cell, its line beside it."""
+    out = ["| test | " + " | ".join(COL_NAMES.get(s, nice(s)) for s in m["cols"]) + " |", "|---|" + "---|" * len(m["cols"])]
+    for title, lvs in groups(m):
+        out.append(f"| **{title}** |" + " |" * len(m["cols"]))
+        for lv in lvs:
+            lab, desc = ROWS[lv]
+            row = []
+            for s in m["cols"]:
+                c = m["cells"][(lv, s)]
+                row.append(f"**{c['v']}** {c['s']}".strip() if c["cls"] != "pend" else f"*{c['v']}*")
+            out.append(f"| {lab}<br><sub>{desc_of(lv, m)}</sub> | " + " | ".join(row) + " |")
+    out.append("")
+    out += [f"- {n}" for n in m["notes"]] + ([""] if m["notes"] else [])
+    out += [f"**{a}**: {b}" + "  " for a, b in GLOSSARY] + [""]
+    return out
+
+
+def md_speed(recs) -> list[str]:
+    out = []
+    for title, rows, _ in speed_panels(recs):
+        out += [f"**{title}** (arena-ticks per second)", "", "| simulator | arena-ticks/s | of the fastest |", "|---|---:|---:|"]
+        out += [f"| {n} | {fmt_k(v)} | {100 * f:.0f}% |" for n, v, f in rows] + [""]
+    if busy_any(recs):
+        out.append("Some timed rounds ran while other processes were busy; the speed details below name them.\n")
+    return out
+
+
+def _body_html(md: str) -> str:
+    """The detail Markdown (headings, tables, lists, paragraphs) as HTML for the collapsed sections."""
+    page = to_html(md, {})
+    return page[page.index("<body>") + 6:page.index("</body>")]
+
+
+PAGE_CSS = """
+:root {
+  --bg: #fbfbfa; --surface: #ffffff; --ink: #1d1f22; --muted: #6b7078; --faint: #9aa0a8;
+  --line: #e6e7e9; --head: #f3f4f5; --exact: #e7f4ec; --exact-ink: #1f6b3a; --near: #f1f6ee;
+  --gap: #fbf3e6; --na: #f6f6f7; --bar: #5b7fb8; --bar2: #9db3d6; --accent: #3a5a8c;
+}
+/* Theme without scripts: the checkbox flips the system's choice (light by default, dark when the system is dark). */
+:root:has(#dm:checked) {
+  --bg: #15171a; --surface: #1c1f23; --ink: #e7e8ea; --muted: #a0a5ad; --faint: #6f757e;
+  --line: #2d3137; --head: #23272c; --exact: #173323; --exact-ink: #8fd3a6; --near: #1f2a20;
+  --gap: #2e281d; --na: #202327; --bar: #7f9fd1; --bar2: #4b638a; --accent: #9db8e6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(:has(#dm:checked)) {
+  --bg: #15171a; --surface: #1c1f23; --ink: #e7e8ea; --muted: #a0a5ad; --faint: #6f757e;
+  --line: #2d3137; --head: #23272c; --exact: #173323; --exact-ink: #8fd3a6; --near: #1f2a20;
+  --gap: #2e281d; --na: #202327; --bar: #7f9fd1; --bar2: #4b638a; --accent: #9db8e6;
+  }
+  :root:has(#dm:checked) {
+  --bg: #fbfbfa; --surface: #ffffff; --ink: #1d1f22; --muted: #6b7078; --faint: #9aa0a8;
+  --line: #e6e7e9; --head: #f3f4f5; --exact: #e7f4ec; --exact-ink: #1f6b3a; --near: #f1f6ee;
+  --gap: #fbf3e6; --na: #f6f6f7; --bar: #5b7fb8; --bar2: #9db3d6; --accent: #3a5a8c;
+  }
+}
+.theme input { position: absolute; opacity: 0; pointer-events: none; }
+.theme .to-light { display: none; }
+:root:has(#dm:checked) .theme .to-dark { display: none; }
+:root:has(#dm:checked) .theme .to-light { display: inline; }
+@media (prefers-color-scheme: dark) {
+  :root:not(:has(#dm:checked)) .theme .to-dark { display: none; }
+  :root:not(:has(#dm:checked)) .theme .to-light { display: inline; }
+  :root:has(#dm:checked) .theme .to-dark { display: inline; }
+  :root:has(#dm:checked) .theme .to-light { display: none; }
+}
+* { box-sizing: border-box; }
+.top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.theme { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 8px;
+  padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+.theme:hover { color: var(--ink); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+main { max-width: 1080px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+.sub { color: var(--muted); margin: 0 0 28px; }
+h2 { font-size: 18px; margin: 40px 0 6px; }
+.lead { color: var(--muted); margin: 0 0 14px; max-width: 760px; }
+.wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 860px; }
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
+thead th { background: var(--head); font-size: 13px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+tbody tr:last-child td, tbody tr:last-child th { border-bottom: 0; }
+th.test { width: 300px; font-weight: 600; font-size: 14px; }
+th.test small { display: block; font-weight: 400; color: var(--muted); font-size: 12.5px; margin-top: 2px; line-height: 1.4; }
+.group td, .group th { background: var(--head); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 6px 12px; }
+td .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+td .s { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; line-height: 1.35; }
+td.exact { background: var(--exact); } td.exact .v { color: var(--exact-ink); }
+td.near { background: var(--near); }
+td.na .v { color: var(--faint); font-weight: 500; font-size: 15px; }
+td.na { background: var(--na); }
+td.pend .v { color: var(--faint); font-weight: 500; font-size: 14px; font-style: italic; }
+.notes { color: var(--muted); font-size: 13px; margin: 10px 0 0; padding-left: 18px; }
+.how { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 14px; }
+.how div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 13.5px; color: var(--muted); }
+.how b { color: var(--ink); display: block; margin-bottom: 2px; }
+.bars { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.bars h3 { font-size: 14px; margin: 0 0 10px; }
+.row { display: grid; grid-template-columns: 150px 1fr 70px; align-items: center; gap: 10px; margin: 6px 0; font-size: 13.5px; }
+.track { height: 14px; background: var(--head); border-radius: 4px; overflow: hidden; }
+.fill { height: 100%; background: var(--bar); border-radius: 4px; }
+.fill.alt { background: var(--bar2); }
+.num { font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+details { margin-top: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+summary { cursor: pointer; font-weight: 600; }
+details p, details li { color: var(--muted); font-size: 14px; }
+details table { min-width: 0; font-size: 13px; margin: 8px 0 14px; }
+details h2 { font-size: 16px; margin: 22px 0 6px; } details h3 { font-size: 14px; margin: 18px 0 6px; }
+.small { color: var(--muted); font-size: 13px; }
+@media (max-width: 600px) { .row { grid-template-columns: 110px 1fr 60px; } th.test { width: 220px; } }
+"""
+
+
+def page_html(recs, sec, m) -> str:
+    e = lambda x: html.escape(str(x), quote=False)
+    cols = m["cols"]
+    h = ['<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, '
+         'initial-scale=1"><title>Simulator Benchmark</title><style>' + PAGE_CSS + "</style></head><body><main>",
+         '<div class="top"><div><h1>Rocket League simulator benchmark</h1>',
+         f'<p class="sub">{e(subtitle(recs))}</p></div>',
+         '<label class="theme"><input type="checkbox" id="dm"><span class="to-dark">Dark mode</span><span class="to-light">'
+         'Light mode</span></label></div>',
+         "<h2>Accuracy</h2>",
+         '<p class="lead">Each test hands every simulator the same starting point and the game\'s recorded inputs, then '
+         'compares it with what the real game did. "Exact" means bit-for-bit equal.</p>',
+         '<div class="wrap"><table><thead><tr><th>Test</th>' + "".join(f"<th>{e(COL_NAMES.get(s, nice(s)))}</th>" for s in cols)
+         + "</tr></thead><tbody>"]
+    for title, lvs in groups(m):
+        h.append(f'<tr class="group"><th colspan="{len(cols) + 1}">{e(title)}</th></tr>')
+        for lv in lvs:
+            lab, desc = ROWS[lv]
+            h.append(f'<tr><th class="test">{e(lab)}<small>{e(desc_of(lv, m))}</small></th>')
+            for s in cols:
+                c = m["cells"][(lv, s)]
+                cls = f' class="{c["cls"]}"' if c["cls"] else ""
+                h.append(f'<td{cls}><span class="v">{e(c["v"])}</span>' + (f'<span class="s">{e(c["s"])}</span>' if c["s"] else "") + "</td>")
+            h.append("</tr>")
+    h.append("</tbody></table></div>")
+    if m["notes"]:
+        h.append('<ul class="notes">' + "".join(f"<li>{e(n)}</li>" for n in m["notes"]) + "</ul>")
+    h.append('<div class="how">' + "".join(f"<div><b>{e(a)}</b>{e(b)}</div>" for a, b in GLOSSARY) + "</div>")
+    panels = speed_panels(recs)
+    if panels:
+        h.append("<h2>Speed</h2>")
+        h.append('<p class="lead">Arena-ticks per second on identical work: the same start states and controls for every '
+                 'simulator. CPU and GPU simulators are measured apart.</p><div class="grid2">')
+        for title, rows, gpu in panels:
+            h.append(f'<div class="bars"><h3>{e(title)}</h3>')
+            for n, v, f in rows:
+                h.append(f'<div class="row"><span>{e(n)}</span><div class="track"><div class="fill{" alt" if gpu else ""}" '
+                         f'style="width:{100 * f:.1f}%"></div></div><span class="num">{e(fmt_k(v))}</span></div>')
+            h.append("</div>")
+        h.append("</div>")
+        if busy_any(recs):
+            h.append('<p class="small">Some timed rounds ran while other processes were busy; the speed details name them.</p>')
+    h.append("<details><summary>Every number in detail</summary>" + _body_html("\n".join(sec["details"])) + "</details>")
+    h.append("<details><summary>Speed: every row, its spread and the machine's load</summary>" + _body_html("\n".join(sec["speed"])) + "</details>")
+    h.append("<details><summary>The simulators, their versions and their adapters</summary>"
+             + _body_html("\n".join(sec["adapters"] + ["Machine:"] + sec["machines"])) + "</details>")
+    how = ["### " + LEVELS[lv][0] + "\n\nGiven: " + LEVELS[lv][2] + "." for lv in ORDER_LEVELS]
+    h.append("<details><summary>How each test works, and how to run it</summary>" + _body_html("\n\n".join(how) + "\n\n"
+             "Run it yourself: `cd bench && python -m simbench all --sims catsim,catsim-py,rocketsim-v3 --suite-data PATH`; "
+             "docs/BENCHMARKS.md has every command, what to download and how long each takes.") + "</details>")
+    h.append("</main></body></html>")
+    return "\n".join(h)
