@@ -49,6 +49,8 @@ pub mod rigid_body;
 pub mod solver;
 #[cfg(feature = "dynamics_core")]
 pub mod world;
+#[cfg(feature = "dynamics")]
+pub mod contacts;
 #[cfg(feature = "car_core")]
 pub mod vehicle;
 #[cfg(all(feature = "car", target_arch = "x86_64"))]

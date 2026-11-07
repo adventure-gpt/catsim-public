@@ -236,7 +236,7 @@ impl<'a> ManifoldResult<'a> {
     }
 }
 
-fn plane_space(n: Vec3) -> (Vec3, Vec3) {
+pub(crate) fn plane_space(n: Vec3) -> (Vec3, Vec3) {
     let mut k = 0.0f32;
     if !(SQRT1_2 < n.z.abs()) {
         let a = n.x * n.x + n.y * n.y;

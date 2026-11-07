@@ -7,6 +7,7 @@ use catsim::game::car::VehicleInputs;
 use catsim::game::config::{body_spawn, preset, Preset};
 use catsim::game::pads::PadLayout;
 use catsim::game::rb_state::RbState;
+use catsim::game::contacts::{self, BodyRef, ManifoldOwner};
 use catsim::game::hidden::{self, BodyState, CarHidden, RoundHidden};
 use catsim::math::rot::Rotator;
 use catsim::math::v3;
@@ -77,6 +78,34 @@ fn hidden_fields() -> Vec<String> {
 #[pyfunction]
 fn car_hidden_fields() -> Vec<String> {
     hidden::CAR_HIDDEN_FIELDS.iter().map(|s| s.to_string()).collect()
+}
+
+/// The names of a contact point's numbers (`NativeArena.contacts`), in order.
+#[pyfunction]
+fn contact_point_fields() -> Vec<String> {
+    contacts::CONTACT_POINT_FIELDS.iter().map(|s| s.to_string()).collect()
+}
+
+fn body_name(b: BodyRef) -> String {
+    match b {
+        BodyRef::Ball => "ball".into(),
+        BodyRef::Car(i) => format!("car{i}"),
+        BodyRef::World(k) => format!("world{k}"),
+    }
+}
+
+fn parse_body(s: &str) -> PyResult<BodyRef> {
+    let bad = || PyValueError::new_err(format!("a body is \"ball\", \"car<i>\" or \"world<k>\", not {s:?}"));
+    if s == "ball" {
+        return Ok(BodyRef::Ball);
+    }
+    if let Some(n) = s.strip_prefix("car") {
+        return n.parse().map(BodyRef::Car).map_err(|_| bad());
+    }
+    if let Some(n) = s.strip_prefix("world") {
+        return n.parse().map(BodyRef::World).map_err(|_| bad());
+    }
+    Err(bad())
 }
 
 /// The names of `NativeArena.car_body`'s and `ball_body`'s numbers, in order.
@@ -289,6 +318,82 @@ impl NativeArena {
     #[getter]
     fn physics_frame(&self) -> i32 {
         self.slot.arena.physics_frame
+    }
+
+    /// The contact memory: (boxes, pairs, manifolds). Boxes: each moving body's broadphase box as the last bounds update
+    /// left it, (body, min, max). Pairs, in the broadphase's order: (body0, body1, dispatched). Manifolds,
+    /// in the dispatcher's order: (owner, index, child0, child1, body0, body1, points), owner "pair" (index into the
+    /// pairs, the compound children or -1) or "predictive" (index into the last step's predictive contacts), points
+    /// as `contact_point_fields()` numbers. Bodies are "ball", "car<i>" or "world<k>" (`world_parts()`).
+    #[allow(clippy::type_complexity)]
+    fn contacts(&self) -> PyResult<(Vec<(String, [f32; 3], [f32; 3])>, Vec<(String, String, bool)>, Vec<(String, usize, i32, i32, String, String, Vec<Vec<f64>>)>)> {
+        let c = self.slot.arena.contacts().map_err(rt)?;
+        let boxes = c.boxes.iter().map(|b| (body_name(b.body), [b.min.x, b.min.y, b.min.z], [b.max.x, b.max.y, b.max.z])).collect();
+        let pairs = c.pairs.iter().map(|p| (body_name(p.body0), body_name(p.body1), p.dispatched)).collect();
+        let manifolds = c
+            .manifolds
+            .iter()
+            .map(|m| {
+                let (kind, i, c0, c1) = match m.owner {
+                    ManifoldOwner::Pair { pair, child } => ("pair", pair, child.0, child.1),
+                    ManifoldOwner::Predictive(k) => ("predictive", k, -1, -1),
+                };
+                (kind.to_string(), i, c0, c1, body_name(m.body0), body_name(m.body1), m.points.iter().map(contacts::contact_point_row).collect())
+            })
+            .collect();
+        Ok((boxes, pairs, manifolds))
+    }
+
+    /// Replace the contact memory with `contacts()`' layout. On an error nothing changes.
+    #[allow(clippy::type_complexity)]
+    fn set_contacts(&mut self, boxes: Vec<(String, [f32; 3], [f32; 3])>, pairs: Vec<(String, String, bool)>, manifolds: Vec<(String, usize, i32, i32, String, String, Vec<Vec<f64>>)>) -> PyResult<()> {
+        let mut c = contacts::Contacts::default();
+        for (b, lo, hi) in boxes {
+            c.boxes.push(contacts::BodyBox { body: parse_body(&b)?, min: v3(lo[0], lo[1], lo[2]), max: v3(hi[0], hi[1], hi[2]) });
+        }
+        for (a, b, d) in pairs {
+            c.pairs.push(contacts::Pair { body0: parse_body(&a)?, body1: parse_body(&b)?, dispatched: d });
+        }
+        for (kind, i, c0, c1, a, b, pts) in manifolds {
+            let owner = match kind.as_str() {
+                "pair" => ManifoldOwner::Pair { pair: i, child: (c0, c1) },
+                "predictive" => ManifoldOwner::Predictive(i),
+                _ => return Err(PyValueError::new_err(format!("a manifold's owner is \"pair\" or \"predictive\", not {kind:?}"))),
+            };
+            let points = pts
+                .iter()
+                .map(|r| contacts::contact_point_from_row(r).ok_or_else(|| PyValueError::new_err(format!("a point is {} numbers", contacts::CONTACT_POINT_FIELDS.len()))))
+                .collect::<PyResult<Vec<_>>>()?;
+            c.manifolds.push(contacts::Manifold { owner, body0: parse_body(&a)?, body1: parse_body(&b)?, points });
+        }
+        self.slot.arena.set_contacts(&c).map_err(|e| PyValueError::new_err(e))
+    }
+
+    /// The arena's planes and meshes ("world<k>" is the k-th): (kind, broadphase handle).
+    fn world_parts(&self) -> Vec<(String, u16)> {
+        self.slot
+            .arena
+            .world_parts()
+            .iter()
+            .map(|w| ((if w.kind == contacts::PartKind::Plane { "plane" } else { "mesh" }).to_string(), w.handle))
+            .collect()
+    }
+
+    /// A body's broadphase handle (pairs are ordered by it), or None when it has no body.
+    fn broadphase_handle(&self, body: &str) -> PyResult<Option<u16>> {
+        Ok(self.slot.arena.broadphase_handle(parse_body(body)?))
+    }
+
+    /// A contact point as the narrow phase adds it, from the point on each body (in that body's frame, Bullet units),
+    /// the normal on body1 (world) and the distance; the rest is made the game's way. `contact_point_fields()` numbers.
+    fn contact_point(&self, body0: &str, body1: &str, local_a: [f32; 3], local_b: [f32; 3], normal: [f32; 3], distance: f32) -> PyResult<Vec<f64>> {
+        let v = |x: [f32; 3]| v3(x[0], x[1], x[2]);
+        let p = self
+            .slot
+            .arena
+            .contact_point(parse_body(body0)?, parse_body(body1)?, v(local_a), v(local_b), v(normal), distance)
+            .ok_or_else(|| PyValueError::new_err("one of those bodies is not there"))?;
+        Ok(contacts::contact_point_row(&p))
     }
 
     /// A car's hidden state as numbers named by `car_hidden_fields()`, or None while it is demolished.
@@ -714,6 +819,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hidden_fields, m)?)?;
     m.add_function(wrap_pyfunction!(car_hidden_fields, m)?)?;
     m.add_function(wrap_pyfunction!(body_fields, m)?)?;
+    m.add_function(wrap_pyfunction!(contact_point_fields, m)?)?;
     m.add_function(wrap_pyfunction!(pad_locations, m)?)?;
     m.add_class::<NativeArena>()?;
     m.add("ENGINE", "catsim")?;

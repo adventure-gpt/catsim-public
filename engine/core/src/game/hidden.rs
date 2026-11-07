@@ -43,11 +43,25 @@ pub struct BodyState {
     pub deactivation_time: f32,
 }
 
+/// What a wheel stands on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WheelGround {
+    /// The arena (its surfaces hold the wheels: the sticky force).
+    #[default]
+    Arena,
+    /// Another car.
+    Car,
+    /// The ball.
+    Ball,
+}
+
 /// One wheel's contact as the last tick left it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct WheelHidden {
     pub contact: bool,
     pub normal: Vec3,
+    /// What the wheel touches (read only when `contact`).
+    pub ground: WheelGround,
 }
 
 /// A car's hidden state. Times are seconds; `*_frame` fields are the arena's physics frame numbers.
@@ -201,7 +215,13 @@ impl Arena {
         let c = p.car.as_ref()?;
         let mut wheels = [WheelHidden::default(); 4];
         for (w, s) in wheels.iter_mut().zip(c.wheels.iter()) {
-            *w = WheelHidden { contact: s.contact.has_contact, normal: s.contact.normal };
+            let owner = s.contact.actor.map(|b| self.world.cw.bodies[b.0 as usize].owner);
+            let ground = match owner {
+                Some(crate::bt::Owner::Car(_)) => WheelGround::Car,
+                Some(crate::bt::Owner::Ball) => WheelGround::Ball,
+                _ => WheelGround::Arena,
+            };
+            *w = WheelHidden { contact: s.contact.has_contact, normal: s.contact.normal, ground };
         }
         Some(CarHidden {
             driving: c.driving,
@@ -237,6 +257,7 @@ impl Arena {
     /// Set a car's hidden state. The held input goes through the game's input store (8-bit axes) without a jump press
     /// or release event. Returns false while the car is demolished.
     pub fn set_car_hidden(&mut self, i: usize, h: &CarHidden) -> bool {
+        let ball = self.ball.as_ref().map(|b| b.body);
         let Some(p) = self.players.get_mut(i) else { return false };
         let Some(c) = p.car.as_mut() else { return false };
         c.driving = h.driving;
@@ -264,10 +285,15 @@ impl Arena {
         c.store_input(input);
         p.input = input;
         for (s, w) in c.wheels.iter_mut().zip(h.wheels.iter()) {
+            let arena = w.contact && w.ground == WheelGround::Arena;
             s.contact.has_contact = w.contact;
-            s.contact.world = w.contact;
-            s.contact.sticky = w.contact;
+            // between ticks the wheel's touch event has always been sent for the contact it has
+            s.contact_notified = w.contact;
+            s.contact.world = arena;
+            s.contact.sticky = arena;
             s.contact.normal = w.normal;
+            // Read only by the wheels' ball-touch event, which asks whether the wheel is on the ball.
+            s.contact.actor = if w.contact && w.ground == WheelGround::Ball { ball } else { None };
         }
         c.world_contact.has_contact = h.world_contact;
         c.world_contact.normal = h.world_contact_normal;
@@ -384,7 +410,7 @@ impl Arena {
 }
 
 /// Field names of `CarHidden::to_row`, in order.
-pub const CAR_HIDDEN_FIELDS: [&str; 61] = [
+pub const CAR_HIDDEN_FIELDS: [&str; 65] = [
     "driving", "on_ground", "jumped", "double_jumped", "supersonic", "supersonic_time",
     "jump_active", "jump_time", "jump_released", "double_jump_active", "double_jump_time",
     "dodge_active", "dodge_time", "dodge_torque_x", "dodge_torque_y", "dodge_torque_z",
@@ -397,6 +423,7 @@ pub const CAR_HIDDEN_FIELDS: [&str; 61] = [
     "wheel2_normal_x", "wheel2_normal_y", "wheel2_normal_z", "wheel3_normal_x", "wheel3_normal_y", "wheel3_normal_z",
     "world_contact", "world_contact_normal_x", "world_contact_normal_y", "world_contact_normal_z",
     "bump_victim", "bump_time", "ball_impact_frame", "ball_touch_frame",
+    "wheel0_ground", "wheel1_ground", "wheel2_ground", "wheel3_ground",
 ];
 
 impl CarHidden {
@@ -419,6 +446,7 @@ impl CarHidden {
         }
         r.extend([b(self.world_contact), f(self.world_contact_normal.x), f(self.world_contact_normal.y), f(self.world_contact_normal.z)]);
         r.extend([self.bump_victim.map_or(-1.0, |v| v as f64), f(self.bump_time), self.ball_impact_frame as f64, self.ball_touch_frame as f64]);
+        r.extend(self.wheels.iter().map(|w| w.ground as u8 as f64));
         debug_assert_eq!(r.len(), CAR_HIDDEN_FIELDS.len());
         r
     }
@@ -436,7 +464,12 @@ impl CarHidden {
         }
         let mut wheels = [WheelHidden::default(); 4];
         for (w, wh) in wheels.iter_mut().enumerate() {
-            *wh = WheelHidden { contact: b(37 + w), normal: v(41 + 3 * w) };
+            let ground = match r[61 + w] as i32 {
+                1 => WheelGround::Car,
+                2 => WheelGround::Ball,
+                _ => WheelGround::Arena,
+            };
+            *wh = WheelHidden { contact: b(37 + w), normal: v(41 + 3 * w), ground };
         }
         Some(CarHidden {
             driving: b(0), on_ground: b(1), jumped: b(2), double_jumped: b(3), supersonic: b(4), supersonic_time: f(5),

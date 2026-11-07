@@ -20,3 +20,5 @@ pub mod round;
 pub mod frame_rng;
 #[cfg(feature = "flow")]
 pub mod hidden;
+#[cfg(feature = "flow")]
+pub mod contacts;

@@ -20,7 +20,7 @@ from pathlib import Path
 
 __all__ = ["init", "Arena", "Ball", "Car", "CarConfig", "CarControls", "CarState", "BallState", "BoostPad",
            "BoostPadState", "GameMode", "Team", "Vec", "RotMat", "Angle", "Loadout", "CarHidden", "Clock", "WheelContact",
-           "BodyState", "RoundState", "__version__"]
+           "BodyState", "RoundState", "ContactPoint", "Manifold", "ContactMemory", "__version__"]
 __version__ = "0.1.2"
 
 _lib_mod = None
@@ -180,8 +180,13 @@ class Clock:
 
 @dataclass
 class WheelContact:
+    """A wheel's contact: touching, the surface normal, and what it touches: "arena", "car" or "ball"."""
     contact: bool = False
     normal: Vec = field(default_factory=lambda: Vec(0, 0, 1))
+    ground: str = "arena"
+
+
+_GROUNDS = ("arena", "car", "ball")
 
 
 @dataclass
@@ -232,6 +237,7 @@ class CarHidden:
         r += [b(self.world_contact), *self.world_contact_normal]
         r += [-1.0 if self.bump_victim is None else float(self.bump_victim), self.bump_time, float(self.ball_impact_frame),
               float(self.ball_touch_frame)]
+        r += [float(_GROUNDS.index(w.ground)) for w in self.wheels]
         return r
 
     @staticmethod
@@ -241,7 +247,7 @@ class CarHidden:
         held = CarControls(r[29], r[30], r[31], r[32], r[33], r[34] > 0.5, r[35] > 0.5, r[36] > 0.5)
         return CarHidden(b(0), b(1), b(2), b(3), b(4), r[5], Clock(b(6), r[7]), b(8), Clock(b(9), r[10]), Clock(b(11), r[12]),
                          v(13), v(16), Clock(b(19), r[20]), b(21), r[22], Clock(b(23), r[24]), r[25], Clock(b(26), r[27]), r[28],
-                         held, [WheelContact(b(37 + w), v(41 + 3 * w)) for w in range(4)], b(53), v(54),
+                         held, [WheelContact(b(37 + w), v(41 + 3 * w), _GROUNDS[int(r[61 + w])]) for w in range(4)], b(53), v(54),
                          None if r[57] < 0 else int(r[57]), r[58], int(r[59]), int(r[60]))
 
 
@@ -278,6 +284,56 @@ class RoundState:
     ball_held: bool = False
     game_time: float = 300.0
     score: tuple = (0, 0)
+
+
+class ContactPoint:
+    """One cached contact point, every field exact (`fields()` names them; `row` holds them in that order). The usual
+    ones as attributes: `local_a` (on the manifold's body0, in its frame), `local_b` (on body1, in its frame),
+    `world_a`, `world_b`, `normal` (on body1, world axes) and `distance`, all in Bullet units."""
+    __slots__ = ("row",)
+
+    def __init__(self, row):
+        self.row = [float(x) for x in row]
+
+    @staticmethod
+    def fields() -> list:
+        return _lib().contact_point_fields()
+
+    local_a = property(lambda s: Vec(*s.row[0:3]))
+    local_b = property(lambda s: Vec(*s.row[3:6]))
+    world_a = property(lambda s: Vec(*s.row[6:9]))
+    world_b = property(lambda s: Vec(*s.row[9:12]))
+    normal = property(lambda s: Vec(*s.row[12:15]))
+    distance = property(lambda s: s.row[15])
+
+    def __eq__(self, o):
+        return isinstance(o, ContactPoint) and self.row == o.row
+
+    def __repr__(self):
+        return f"ContactPoint(local_a={self.local_a}, local_b={self.local_b}, normal={self.normal}, distance={self.distance})"
+
+
+@dataclass
+class Manifold:
+    """A contact manifold: up to 4 cached points between `body0` and `body1` ("ball", "car<i>" with i the car's place in
+    `get_cars()`, or "world<k>", `Arena.world_parts()`'s k-th). `owner` is "pair" (`index` into the pairs, `child` the
+    compound children or -1) or "predictive" (`index` into the last step's continuous-collision contacts)."""
+    owner: str
+    index: int
+    child: tuple
+    body0: str
+    body1: str
+    points: list = field(default_factory=list)
+
+
+@dataclass
+class ContactMemory:
+    """What a step reads from the last one besides the bodies: each moving body's broadphase box ((body, min, max), as the
+    last bounds update left it), the broadphase's overlapping pairs in their order ((body0, body1, dispatched), body0 the
+    lower broadphase handle) and the manifolds in the dispatcher's order."""
+    boxes: list = field(default_factory=list)
+    pairs: list = field(default_factory=list)
+    manifolds: list = field(default_factory=list)
 
 
 class CarConfig:
@@ -691,6 +747,29 @@ class Arena:
         self._native_arena().set_round_hidden(int(r.physics_frame), int(r.phase), float(r.phase_left), cc,
                                               bool(r.ball_has_been_hit), bool(r.ball_held), float(r.game_time),
                                               [int(x) for x in r.score])
+
+    def get_contacts(self) -> "ContactMemory":
+        """The contact memory: pairs and manifolds with their cached points (docs/API.md, "Contact memory")."""
+        boxes, pairs, mans = self._native_arena().contacts()
+        return ContactMemory([(b, Vec(*lo), Vec(*hi)) for b, lo, hi in boxes], [tuple(p) for p in pairs],
+                             [Manifold(o, i, (c0, c1), b0, b1, [ContactPoint(r) for r in pts]) for o, i, c0, c1, b0, b1, pts in mans])
+
+    def set_contacts(self, m: "ContactMemory") -> None:
+        """Replace the contact memory. The pairs should be the bodies whose broadphase boxes overlap now (their order is
+        what this sets); each manifold is made by its pair's own collision algorithm, in the order given."""
+        self._native_arena().set_contacts([(str(b), list(lo), list(hi)) for b, lo, hi in m.boxes],
+                                          [(str(a), str(b), bool(d)) for a, b, d in m.pairs],
+                                          [(x.owner, int(x.index), int(x.child[0]), int(x.child[1]), x.body0, x.body1,
+                                            [p.row if isinstance(p, ContactPoint) else list(p) for p in x.points]) for x in m.manifolds])
+
+    def world_parts(self) -> list:
+        """The arena's planes and meshes ("world<k>" is the k-th): (kind, broadphase handle)."""
+        return [tuple(w) for w in self._native_arena().world_parts()]
+
+    def contact_point(self, body0: str, body1: str, local_a, local_b, normal, distance: float) -> "ContactPoint":
+        """A contact point as the game adds one, from the point on each body (in its frame), the normal on body1 and the
+        distance (Bullet units); the friction, restitution and the rest are made the game's way."""
+        return ContactPoint(self._native_arena().contact_point(body0, body1, list(local_a), list(local_b), list(normal), float(distance)))
 
     def use_game_countdown(self, on: bool = True) -> None:
         """With `round_flow`, run later kickoffs' countdowns on the game's own clock (a 1 s start, then 3, 2, 1)."""

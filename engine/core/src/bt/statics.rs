@@ -175,6 +175,17 @@ impl CollisionWorld {
         t
     }
 
+    /// After the pair cache was replaced (bt::contacts): where the static-static pairs end, as the table's build finds it.
+    pub(super) fn refresh_static_pair_prefix(&mut self) {
+        if self.statics.epoch != self.static_epoch || !self.statics.ok {
+            return;
+        }
+        let t = &mut self.statics;
+        let pairs = &self.broadphase.pairs.pairs;
+        let k = pairs.iter().take_while(|p| t.is_sleeping_static(p.proxy0) && t.is_sleeping_static(p.proxy1)).count();
+        t.ss_prefix = if pairs[k..].iter().any(|p| t.is_static_handle(p.proxy0) && t.is_static_handle(p.proxy1)) { 0 } else { k };
+    }
+
     pub fn ensure_statics(&mut self) {
         if self.statics.epoch != self.static_epoch {
             self.statics = self.build_statics();
