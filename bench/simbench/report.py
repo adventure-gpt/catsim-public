@@ -209,6 +209,7 @@ def glance(recs) -> list[str]:
         n = max(r["summary"]["recordings"] for r in rows)
         if lv in ("D", "Df"):
             parts = [f"{nice(r['sim'])} models it: {r['summary']['exact_to_the_end']}/{r['summary']['recordings']} exact to the end"
+                     + ("" if r["summary"]["exact_to_the_end"] == r["summary"]["recordings"] else ", " + whole_line(r["summary"], r, lv == "Df"))
                      for r in rows]
             out.append(f"- **{LEVELS[lv][0]}** ({n} recorded match{'es' if n != 1 else ''}): needs the game's random stream; " + "; ".join(parts) + ".")
             continue
@@ -217,10 +218,8 @@ def glance(recs) -> list[str]:
         for r in rows:
             sm = r["summary"]
             t = f"{nice(r['sim'])} {sm['exact_to_the_end']}/{sm['recordings']} exact to the end"
-            if sm["exact_to_the_end"] < sm["recordings"] and lv == "Cf":
-                t += f", {sm['exact_pct']:.1f}% of float rows exact"
-            elif sm["exact_to_the_end"] < sm["recordings"] and sm.get("first_drift_s"):
-                t += f", first drift after a median {sm['first_drift_s']['median']:.1f} s"
+            if sm["exact_to_the_end"] < sm["recordings"]:
+                t += ", " + whole_line(sm, r, lv == "Cf")
             parts.append(t)
         out.append(f"- **{LEVELS[lv][0]}** ({n} recorded match{'es' if n != 1 else ''}): " + "; ".join(parts) + ".")
     for lv in ("A", "B"):
@@ -805,7 +804,8 @@ def fill_doc(doc: Path, sec: dict, charts_dir: Path, made) -> None:
     if readme.is_file():
         t = readme.read_text(encoding="utf-8")
         if a in t and b in t:
-            lines = [l for l in sec["glance"] if l.startswith("- **Whole games")]
+            want = (LEVELS["C"][0], LEVELS["Cf"][0], LEVELS["D"][0])
+            lines = [l for w in want for l in sec["glance"] if l.startswith(f"- **{w}**")]
             block = a + "\n\n" + "\n".join(lines) + "\n\n[docs/BENCHMARKS.md](docs/BENCHMARKS.md) has every benchmark beside the other simulators.\n\n" + b
             readme.write_text(t[:t.index(a)] + block + t[t.index(b) + len(b):], encoding="utf-8", newline="\n")
             print(f"filled: {readme}")
@@ -869,9 +869,26 @@ SHORT_WHY = {"A": "can't load the full state", "B": "can't take this start state
 
 
 def pct2(x: float, all_exact: bool) -> str:
-    """A percentage to 2 decimals that never rounds a miss up to 100.00%."""
-    s = f"{x:.2f}%"
-    return "99.99%" if s == "100.00%" and not all_exact else s
+    """A percentage to 2 decimals, or 4 above 99.9% (so that a miss never rounds up to 100%)."""
+    if all_exact:
+        return "100%"
+    return f"{x:.4f}%" if x >= 99.9 else f"{x:.2f}%"
+
+
+def whole_line(sm: dict, r: dict, floats: bool) -> str:
+    """The small line under a whole-games cell."""
+    ex, n = sm["exact_to_the_end"], sm["recordings"]
+    if ex == n:
+        return "exact to the end"
+    if floats:
+        off = sm["compared_rows"] - sm["exact_rows"]
+        return (f"{off:,} of {sm['compared_rows']:,} float rows off" if off < 1000 else f"{sm['exact_pct']:.2f}% of float rows exact")
+    drifts = sorted(g["first_drift"]["seconds"] for g in r.get("recordings") or []
+                    if "error" not in g and g.get("first_drift") and g["first_drift"].get("seconds") is not None)
+    if ex and drifts:
+        k = n - ex
+        return f"{k} match{'es' if k != 1 else ''} drift{'' if k != 1 else 's'}, the first at {drifts[0]:.1f} s"
+    return f"first drift after {(sm.get('first_drift_s') or {}).get('median', 0):.1f} s (median)"
 
 
 def model(recs) -> dict:
@@ -903,12 +920,7 @@ def model(recs) -> dict:
             if lv in WHOLE:
                 sm = r["summary"]
                 ex, n = sm["exact_to_the_end"], sm["recordings"]
-                if ex == n:
-                    small = "exact to the end"
-                elif lv in ("Cf", "Df"):
-                    small = f"{sm['exact_pct']:.2f}% of float rows exact"
-                else:
-                    small = f"first drift after {(sm.get('first_drift_s') or {}).get('median', 0):.1f} s (median)"
+                small = whole_line(sm, r, lv in ("Cf", "Df"))
                 if n < counts[lv]:
                     small += f"; {n} of {counts[lv]} matches"
                 cls = "exact" if ex == n else "near" if n > 1 and ex == n - 1 else ""
