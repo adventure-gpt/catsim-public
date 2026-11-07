@@ -142,7 +142,7 @@ def run(names, setup_env, levels, limit, jobs, out_dir, emit):
             summary["error_after_kickoff"] = err
             summary["bodies_only"] = harness_flow
             base = ASSISTS[lv.rstrip("f")]
-            assists = (base if not harness_flow else base[:1] + flow.ASSISTS)
+            assists = base if not harness_flow else list(flow.ASSISTS)      # the flow says what it hands over
             emit({"kind": "accuracy", "level": lv, "suite": "our recordings", "sim": label, "status": "ok",
                   "version": hello.get("version"), "about": hello.get("about"), "choices": hello.get("choices", []),
                   "flow": "the harness's (simbench.flow)" if harness_flow else "the simulator's own",
