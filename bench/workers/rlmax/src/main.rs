@@ -176,7 +176,10 @@ impl Sim for Rlmax {
     }
 
     fn new_arena(&self, cars: &[CarSpec], _map: &str) -> Result<RArena, String> {
-        Ok(RArena { a: Arena::new(cars.len() as u32), presets: cars.iter().map(|c| preset(&c.preset)).collect(),
+        // an arena of a car count RLMAX has no layout for (it holds 1v1 to 3v3): this segment fails, the worker goes on
+        let n = cars.len() as u32;
+        let a = std::panic::catch_unwind(|| Arena::new(n)).map_err(|_| format!("RLMAX has no arena for {n} cars"))?;
+        Ok(RArena { a, presets: cars.iter().map(|c| preset(&c.preset)).collect(),
                     teams: cars.iter().map(|c| c.team as u32).collect(), pads_from_recording: false, started: false })
     }
 
