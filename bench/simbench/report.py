@@ -283,6 +283,87 @@ def charts(recs, out: Path) -> list[Path]:
     return made
 
 
+def summary_table(recs) -> list[str]:
+    """One row per measure, one column per simulator: the headline numbers of every benchmark that was run."""
+    sims_all = sim_sort({r["sim"] for r in recs if r.get("sim")})
+    sims_all = [s for s in sims_all if s != "catsim-py"] + (["catsim-py"] if "catsim-py" in sims_all else [])
+    rows = []
+    sp = latest([r for r in recs if r.get("kind") == "speed"], lambda r: (r["sim"], r.get("mode"), r.get("arenas"), r.get("threads")))
+    big = [r for r in sp.values() if r.get("status") == "ok" and r.get("device", "cpu") == "cpu" and r.get("arenas") == 1024]
+    if big:
+        t = big[0]["threads"]
+        for mode in ("1v1", "3v3"):
+            cells = []
+            for s in sims_all:
+                r = sp.get((s, mode, 1024, t))
+                dev = next((x.get("device") for x in sp.values() if x["sim"] == s and x.get("device")), "cpu")
+                cells.append(fmt_k(r["arena_ticks_per_s"]) if r and r.get("status") == "ok" else ("GPU simulator" if dev == "gpu" else "-"))
+            rows.append((f"CPU speed, {mode}, 1,024 arenas, {t} threads (arena-ticks/s)", cells))
+        for mode in ("1v1", "3v3"):
+            cells = []
+            for s in sims_all:
+                r = sp.get((s, mode, 1, 1))
+                cells.append(fmt_k(r["arena_ticks_per_s"]) if r and r.get("status") == "ok" else "-")
+            rows.append((f"CPU speed, {mode}, one arena, one thread", cells))
+    gpu = [r for r in sp.values() if r.get("status") == "ok" and r.get("device") == "gpu"]
+    if gpu:
+        n = max(r["arenas"] for r in gpu)
+        for mode in ("1v1", "3v3"):
+            cells = []
+            for s in sims_all:
+                r = sp.get((s, mode, n, 1))
+                cells.append(fmt_k(r["arena_ticks_per_s"]) if r and r.get("status") == "ok" else "-")
+            rows.append((f"GPU speed, {mode}, {n:,} arenas", cells))
+    acc = latest([r for r in recs if r.get("kind") == "accuracy"], lambda r: (r["sim"], r["level"], r.get("suite")))
+    for level, label in (("A", "A. physics only: exact body-ticks / segment pass"), ("B", "B. public state: exact body-ticks / segment pass"),
+                         ("Bp", "B, packet fields only: exact / pass")):
+        if not any(k[1] == level for k in acc):
+            continue
+        cells = []
+        for s in sims_all:
+            r = acc.get((s, level, "full-state suite"))
+            if r is None:
+                cells.append("-")
+            elif r.get("status") != "ok":
+                cells.append(r.get("status", "?"))
+            else:
+                a = r["summary"]["all"]
+                cells.append(f"{a['exact_body_ticks']:.2f}% / {a['segment_pass']:.2f}%")
+        rows.append((label, cells))
+    rl = latest([r for r in recs if r.get("kind") == "rlpr"], lambda r: r["sim"])
+    if rl:
+        cells = []
+        for s in sims_all:
+            r = rl.get(s)
+            if r is None:
+                cells.append("-")
+            elif r.get("status") != "ok":
+                cells.append(r.get("status", "?"))
+            else:
+                a = r["results"]["segments_120"]["total"]
+                cells.append(f"{a['pass_pct']:.2f}% / {a['mean_norm']:.2f}")
+        rows.append(("RocketSim's rlpr_metric, 120-tick segments: pass / mean norm", cells))
+    for level, label in (("C", "C. whole games, choices given: exact to the end"), ("D", "D. whole games, random stream given: exact to the end")):
+        if not any(k[1] == level for k in acc):
+            continue
+        cells = []
+        for s in sims_all:
+            r = acc.get((s, level, "our recordings"))
+            if r is None:
+                cells.append("-")
+            elif r.get("status") != "ok":
+                cells.append(r.get("status", "?"))
+            else:
+                a = r["summary"]
+                cells.append(f"{a['exact_to_the_end']} of {a['recordings']} games")
+        rows.append((label, cells))
+    if not rows:
+        return []
+    out = ["| | " + " | ".join(nice(s) for s in sims_all) + " |", "|---|" + "---|" * len(sims_all)]
+    out += [f"| {label} | " + " | ".join(cells) + " |" for label, cells in rows]
+    return out + [""]
+
+
 def main(out: Path) -> None:
     recs = load(Path(out))
     if not recs:
@@ -293,7 +374,7 @@ def main(out: Path) -> None:
         m = json.loads(m)
         text.append(f"Machine: {m['cpu']}, {m['threads']} threads, {m['ram_gb']} GB, {m['os'].split(' (')[0]}"
                     + (f"; {', '.join(m['gpus'])}" if m.get("gpus") else "") + "\n")
-    text += speed_tables(recs) + accuracy_tables(recs) + rlpr_table(recs)
+    text += ["## Summary\n"] + summary_table(recs) + ["## Details\n"] + speed_tables(recs) + accuracy_tables(recs) + rlpr_table(recs)
     p = Path(out) / "report.md"
     p.write_text("\n".join(text), encoding="utf-8")
     made = charts(recs, Path(out) / "charts")

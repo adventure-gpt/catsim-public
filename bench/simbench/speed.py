@@ -117,7 +117,7 @@ def configs(plan: str, max_threads: int, device: str = "cpu") -> list:
             for arenas in ((1024, 4096, 16384) if full else (1024, 4096)):
                 out.append((mode, arenas, 1, 120 if full else 30))
         return out
-    threads = sorted({1, 2, 4, 8, max_threads} if full else {1, max_threads})
+    threads = sorted({1, 4, max_threads} if full else {1, max_threads})
     threads = [t for t in threads if t <= max_threads]
     for mode in MODES:
         out.append((mode, 1, 1, 1500 if full else 300))            # one arena at a time

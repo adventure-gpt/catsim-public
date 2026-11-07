@@ -18,14 +18,18 @@ class RocketSimV2(Adapter):
     name = "rocketsim-v2"
     device = "cpu"
     units = "uu"
-    caps = {"levels": ["packet", "v3"], "frame_timing": False, "game_flow": False, "rng_stream": False, "spot_choices": False,
+    # Accuracy levels are left off: v2's CarState clocks mean other things than v3's (its flip and jump timers), so a start
+    # mapped from the suite's v3 rows isn't v2's best shot; set_state below is ready for a mapping someone checks.
+    caps = {"levels": [], "frame_timing": False, "game_flow": False, "rng_stream": False, "spot_choices": False,
             "threads": True}
     choices = [
+        "accuracy not run: v2's CarState clocks (flip, jump) mean other things than v3's, and no checked mapping exists yet",
         "sets every CarState field the level gives (jump and flip clocks, flip torque, boost, supersonic and handbrake "
         "state, auto-flip, world contact, wheel count, last controls, demolition); the ball through BallState",
         "batched speed through Arena.multi_step (its own threads; the thread count isn't settable from Python)",
         "takes no frame timing and no contact manifolds; per-car Python calls set controls and read states",
-        "its ball keeps its rotation (v2 doesn't turn the ball), which the suite's ball-axis terms count",
+        "accuracy: the ball's rotation turned on (ArenaConfig.no_ball_rot = False); speed: its default (the ball's rotation "
+        "left out, a little less work)",
     ]
 
     def setup(self, env):
@@ -38,9 +42,11 @@ class RocketSimV2(Adapter):
         self.presets = {"Octane": rs.CarConfig.OCTANE, "Dominus": rs.CarConfig.DOMINUS, "Plank": rs.CarConfig.PLANK,
                         "Breakout": rs.CarConfig.BREAKOUT, "Hybrid": rs.CarConfig.HYBRID, "Merc": rs.CarConfig.MERC}
 
-    def new_arena(self, cars, map="Stadium_P"):
+    def new_arena(self, cars, map="Stadium_P", ball_rotation=True):
         rs = self.rs
-        a = rs.Arena(rs.GameMode.SOCCAR)
+        cfg = rs.ArenaConfig()
+        cfg.no_ball_rot = not ball_rotation          # v2 leaves the ball's rotation out by default; accuracy turns it on
+        a = rs.Arena(rs.GameMode.SOCCAR, config=cfg)
         out = []
         for c in cars:
             team = rs.Team.BLUE if int(c["team"]) == 0 else rs.Team.ORANGE
@@ -137,7 +143,7 @@ class RocketSimV2(Adapter):
         """Batched: every arena's controls, then Arena.multi_step over all of them (the package's own threads), then every
         arena's state through get_gym_state; one arena on one thread: arena.step."""
         cars = job["cars"]
-        arenas = [self.new_arena(cars) for _ in range(job["arenas"])]
+        arenas = [self.new_arena(cars, ball_rotation=False) for _ in range(job["arenas"])]
         n_dec, k = controls.shape[1], job["decision_ticks"]
         threaded = job["threads"] > 1
         out = []
