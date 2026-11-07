@@ -47,7 +47,9 @@ def recording_files(extra: str | None = None) -> list[Path]:
 
 def run(names, setup_env, levels, limit, jobs, out_dir, emit):
     levels = [x.strip() for x in (levels or "C,D,Cf,Df").split(",") if x.strip() in ("C", "D", "Cf", "Df")]
-    files = recording_files() + recording_files(os.environ.get("SIMBENCH_FLOAT_RECORDINGS"))
+    files = recording_files()
+    have = {f.name for f in files}
+    files += [f for f in recording_files(os.environ.get("SIMBENCH_FLOAT_RECORDINGS")) if f.name not in have]
     by_level = {lv: [f for f in files if lv in game.levels(game.load_meta(f))] for lv in levels}
     for lv in levels:
         if limit:
