@@ -1,7 +1,9 @@
 # Accuracy: what is claimed, and how to check it
 
 catSim claims only what has been measured. Each line says what was compared, how much, and how to run it. All the
-checks below (2026-11-04) used game data made by this repo's dumper from a fresh Steam install, nothing else.
+checks below used game data made by this repo's dumper from a fresh Steam install, nothing else: from Steam build
+25914621 on 2026-11-04, from build 26349479 on 2026-11-06. Both builds give byte-identical data, and
+`catsim-dump --check catsim_data` tells you whether yours is that data.
 
 ## Checks you can run yourself
 
@@ -23,8 +25,9 @@ been checked against the real game for a long time and reads its game data its o
 
 - **The dumper's data equals the development engine's**, every table and every mesh bit for bit, except two
   values where the dumper has the game's own value and the development engine doesn't: the small boost pads'
-  height on Stadium_P (the game's is `0x428029fe`, measured in the game) and the default pickup box, which no car body uses (docs/PROVENANCE.md). A second Steam build gives
-  identical tables and meshes.
+  height on Stadium_P (the game's is `0x428029fe`, measured in the game) and the default pickup box, which no car body uses (docs/PROVENANCE.md). Two more Steam
+  builds give byte-identical data (25641912, and 26349479 from 2026-11-06). On 2026-11-06 the presets, the steer
+  folds and the bodies were compared again with the development engine's current tables: all equal.
 - **The whole engine**: 16,000,000 ticks of the same differential fuzzing, development engine (its own data)
   against this repo's engine (the dumper's data only): 10,000,000 plain, 3,000,000 with the random-draw model,
   3,000,000 on UF_Night_P. No difference.
@@ -53,13 +56,30 @@ been checked against the real game for a long time and reads its game data its o
 - Packets show the game's state after its own rounding (positions to 0.01, an integer rotation), and catSim
   reproduces that rounding.
 
+## The game data on two sets of recordings (2026-11-06)
+
+Run with the benchmark harness (`python -m simbench`, in `bench/`) on data from Steam build 26349479. Both sets of
+recordings were made before that build, on earlier ones.
+
+- **The public RocketGPU full-state suite**, its 36 recordings with a Plank-hitbox car, at the suite's level A
+  (each segment started from the game's full internal state): 99.29% of 4,507,550 body-ticks and 96.08% of 7,090
+  segments exact, the same to the last digit on Windows 11 and on Linux (WSL).
+- **Our own 39 recorded RLBot games**, whole, at level C (the game's kickoff and respawn choices given): all 39 exact
+  to the end, 1,642,789 of 1,642,789 compared rows. At level D (catSim's own choices from the random stream, on the 4
+  games that have what it needs): 4 of 4 exact to the end.
+- **The Darkcar rule is what the game does.** The Darkcar body has no handling preset; the dumper runs it on Plank's
+  with the wheel rest positions rounded to 0.01 uu (docs/PROVENANCE.md). Left out (Plank's rests as stored, every
+  other file the same), the same runs give 88.58% of body-ticks and 29.13% of segments at level A, and 24 of the 39
+  games exact to the end at level C.
+
 ## What isn't claimed
 
 - Other loadouts' random draws have not been checked against recordings: the model applies the same measured
   rules to any items the dumper describes. Known limits: the draws of the online services', cache, crowd-chant
   and save timers (not predictable from the game's state), and one loadout shape for all cars.
 - Only soccar, on Stadium_P and UF_Night_P, with the 19 car bodies the data folder lists.
-- The Epic edition's dump hasn't been compared with Steam's on a real install yet.
+- The Epic edition's dump was compared with Steam's on one install (byte-identical, docs/DUMPER.md); other Epic
+  builds haven't been.
 
 ## Speed
 

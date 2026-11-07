@@ -13,11 +13,13 @@ catSim was built by studying the game closely; the game's data comes from your o
 ## The game data: all of it comes from the user's own install
 
 `catsim-dump` writes the arena meshes, every table the engine loads and the car items' data for the random-draw
-model. Checked on a Windows Steam install (build 25914621) bit for bit against the development engine's tables:
+model. Checked on a Windows Steam install (build 25914621) bit for bit against the development engine's tables. Builds
+25641912 and 26349479 (2026-11-06) give byte-identical files, and on 2026-11-06 the presets, steer folds and bodies
+were compared again with the development engine's current tables: equal.
 
 | Data | Where the dumper reads it | Against the development engine |
 |---|---|---|
-| Arena meshes (16) and their placement | `Stadium_P.upk`: the level's cooked per-triangle collision cache; the components' mirror and translation | Bit-exact (two Steam builds) |
+| Arena meshes (16) and their placement | `Stadium_P.upk`: the level's cooked per-triangle collision cache; the components' mirror and translation | Bit-exact (three Steam builds give the same files) |
 | Arena planes (6) | `Stadium_P.upk`: the plane mesh's bounds and its six placed components; the basis by the engine's own rotation chain (rule below) | Bit-exact |
 | Goal volumes (2) | `Stadium_P.upk`: the goal volumes' brush polygons and locations | Bit-exact |
 | Boost pads (34) | `Stadium_P.upk`: the placed pickups (inheriting the prefab's locations) | x, y, size, big pads' height exact; small pads' height: see below |
@@ -59,7 +61,9 @@ Things the files don't say, each stated where it is used:
   (measured; a constant with a doc comment in `game/arena.rs`; other yaws use the formula).
 - **Bodies without a handling preset** (the Darkcar) run on the preset whose physics box equals theirs (Plank),
   with that preset's wheel rest positions rounded to 0.01 uu. Measured in the game: the Darkcar's wheels
-  sit at y 27.8 and 20.28 where Plank's preset says 27.799904 and 20.280005.
+  sit at y 27.8 and 20.28 where Plank's preset says 27.799904 and 20.280005. The recordings agree: with the rule
+  left out, the full-state suite's 36 recordings with a Plank-hitbox car drop from 99.29% to 88.58% exact
+  body-ticks, and our own whole games from 39 of 39 to 24 of 39 exact to the end (docs/ACCURACY.md).
 - **Pickup boxes** of their own only for the eight presets checked in the game; other presets use the default.
 - **Product ids** of the 19 bodies (the public numbers RLBot loadouts use).
 - **Steer fold:** tan and atan correctly rounded (reproduces every folded key).

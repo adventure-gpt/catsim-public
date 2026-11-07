@@ -7,14 +7,16 @@ catsim-dump --list                                     # which installs it can s
 catsim-dump --out catsim_data --keys keys.txt          # find the game, check it, write catsim_data/ (about 3 minutes)
 catsim-dump --out catsim_data --keys keys.txt --skip-items                  # about 10 s, without the car items
 catsim-dump --out catsim_data --keys keys.txt --game "D:\Games\rocketleague"  # say where the game is
+catsim-dump --check catsim_data                        # is this folder the checked data? which game and dumper made it
 ```
 
 ## What it does, and what it never does
 
 - It reads files on disk only: the packages under `TAGame\CookedPCConsole` and the executable's version resource.
   It never starts the game, never reads a running game's memory, and never writes to the game's folder.
-- It checks the game's version before reading anything else, and stops with a clear message on a version nobody
-  has checked (`--allow-unknown-version` tries anyway; the structural checks below still apply).
+- It checks the game's version before reading anything else. On a version it doesn't know it stops, says which
+  packages changed and what to do (see "When the game updates" below).
+- After writing, it compares every physics file it wrote with the checked data and says whether they are the same.
 - It checks the structure of everything it reads and refuses to write anything that doesn't fit, rather than guess.
 
 ## Finding the game
@@ -47,7 +49,8 @@ match that uses one runs without the animated parts' timers (see below); everyth
 
 ```
 catsim_data/
-  catsim_data.json        what was dumped, from which install and version, and each file's sha256
+  catsim_data.json        what was dumped, from which install and version, by which dumper, whether it is the
+                          checked data, and each file's sha256
   soccar/arena.txt        the 16 arena pieces: mesh name, mirror, placement
   soccar/mesh_0.cmf ...   the pieces' triangle meshes (physics units, the game's vertex and triangle order)
   tables.txt              car presets, steer curves, bodies, pads, goals, planes, pickup boxes
@@ -85,14 +88,39 @@ python -m catsim.draw --data catsim_data --map UF_Night_P --car car_id=23,wheels
 
 `Arena.start_game_rng` does this for you (docs/API.md).
 
+## When the game updates
+
+Rocket League updates every few weeks, and most updates change some of the packages the dumper reads without changing
+a single physics number. The 2026-11-06 update (Steam build 26349479) changed four of the 23 (Stadium_P, UF_Night_P,
+Startup, TAGame), and every file the dumper writes from it is byte for byte the one it wrote from the build before.
+
+The dumper knows a game version by its packages' hashes (`catsim/dump/versions.py`). On a version it doesn't know, it
+stops and lists the packages that changed. Then:
+
+1. Update catSim: `pip install -U "catsim-rl[dump]"`. A newer release may know the version.
+2. If it still doesn't, add `--allow-unknown-version`. The dumper reads and checks everything as always, then compares
+   the 18 physics files it wrote (`tables.txt`, `soccar/arena.txt` and the 16 meshes) with the hashes of the checked
+   data. `data: the same files as the checked data ...` means you have exactly the data that was checked against the
+   game. `data: NOT the checked data: it differs from the checked data in tables.txt` means the update changed
+   physics data and nobody has checked the new numbers yet: catSim may not match the game with them.
+3. Either way, tell us on [the issue tracker](https://github.com/adventure-gpt/catsim-public/issues): the version and
+   the hashes the dumper printed.
+
+`items.txt` is not part of the comparison: updates add car items, and the items feed only the random-draw model.
+
+`catsim-dump --check DIR` makes the same comparison for any data folder, and says which game and which dumper made it
+(dumpers before 0.1.2 don't record themselves) and whether a file changed after the dump. A known version that doesn't
+give the checked data means a bug in the dumper: it says so and exits with an error.
+
 ## Versions checked
 
 | Game build | Edition | Result |
 |---|---|---|
 | Steam build 25914621 (executable 1.0.10897.0), Windows 11 | Steam | Every table and mesh bit-exact against the development engine (two corrected values, docs/PROVENANCE.md) |
 | Steam build 25641912 (executable 1.0.10897.0), Windows 11 | Steam | Tables and arena meshes identical to the above |
+| Steam build 26349479 (executable 1.0.10897.0, 2026-11-06), Windows 11 | Steam | All 18 physics files and `items.txt` byte-identical to build 25914621's; presets, steer folds and bodies re-checked against the development engine: equal |
 | Epic build ++Prime+Update60.1-CL-530866 (executable 1.0.10897.0), Windows 11 | Epic | Found by `--list` through the launcher's install manifest; all 18 data files (arena meshes and every table) byte-identical to the Steam dump of the same engine version |
 
 To check another Epic install: run `catsim-dump --list` (it should show an `epic` line), then
-`catsim-dump --out epic_data --keys keys.txt --allow-unknown-version`, and compare `epic_data/catsim_data.json`'s
-file hashes with a Steam dump of the same game version.
+`catsim-dump --out epic_data --keys keys.txt` (add `--allow-unknown-version` if it doesn't know the build). Its last
+lines say whether the data is the checked data.
