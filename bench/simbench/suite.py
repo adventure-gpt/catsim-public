@@ -171,6 +171,11 @@ def respawn_spots(truth, i0: int, ticks: int, nc: int, start: dict) -> list:
     return out
 
 
+def is_batmobile(config: dict) -> bool:
+    """RocketSim's presets fold the Batmobile into the Plank: the same hitbox, its own spawn height."""
+    return abs(config.get("hitbox_size", {}).get("x", 0.0) - 131.32) < 0.01 and abs(config.get("spawn_z", 0.0) - 36.0) < 1e-3
+
+
 def score_recording(holder, path: Path, level: str, units: str) -> dict:
     """`holder`: [worker]; a worker that dies is replaced in it."""
     worker = holder[0]
@@ -199,6 +204,9 @@ def score_recording(holder, path: Path, level: str, units: str) -> dict:
                 c["preset"] = STATE_PRESETS[idx]
             c["team"] = int(args[0]["value"])
             c["config"] = {key: v for key, v in args[1].items() if not key.startswith("__")}
+            # (a segment's own car log, not the recording's first order: a respawn can change which car holds a slot)
+            if is_batmobile(c["config"]):
+                c["game_car"] = "BATMOBILE"
             cars.append(c)
         ticks = int(seg["ticks"])
         i0 = at[seg["start"]]
@@ -246,7 +254,7 @@ def score_recording(holder, path: Path, level: str, units: str) -> dict:
         if not scored.any():
             continue
         ex = (sim.view(np.uint32) == tru.view(np.uint32)).all(-1)            # [ticks, bodies]
-        if os.environ.get("SIMBENCH_DEBUG") and not ex[scored].all() and r.get("_dbg", 0) < 6:
+        if os.environ.get("SIMBENCH_DEBUG") and not ex[scored].all() and r.get("_dbg", 0) < (int(os.environ["SIMBENCH_DEBUG"]) if os.environ["SIMBENCH_DEBUG"].isdigit() else 6):
             r["_dbg"] = r.get("_dbg", 0) + 1
             t, b = np.argwhere(~ex & scored[:, None])[0]
             d = sim[t, b].astype(np.float64) - tru[t, b]

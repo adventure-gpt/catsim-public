@@ -15,4 +15,5 @@ arena.txt
 keys.txt
 # simbench: build output and local results
 bench/workers/*/target/
+bench/workers/*/target-fs/
 bench_results/

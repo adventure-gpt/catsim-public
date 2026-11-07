@@ -67,6 +67,7 @@ class RocketGPU(Adapter):
         "full-state start: set_full_state with every suite field, after the segment's own calls and mutators (as the suite runs it)",
         "public-state start: set_state_v3 (v3's CarState field for field) and the ball's sleep flag through the full state",
         "per tick: driving_disabled, the ball's 2D hold, the frame's render fraction and start time, pad credits",
+        "public and packet starts: its own pad pickups off (pads come only from the recording's credits)",
         "whole games: each tick's render fraction from the recording's frames (pads tested once a rendered frame); a "
         "float-precision start's Bullet words written into its body fields",
     ]
@@ -98,7 +99,7 @@ class RocketGPU(Adapter):
         # (its flip timer's live flag has no field in the state API: its offset from its own layout header)
         head = src / "src" / "cpu_ispc" / "rg_types.isph"
         found = re.search(r"uint8 flip_timer_live;\s*//\s*(\d+)", head.read_text()) if head.is_file() else None
-        self.flip_live_at = int(found.group(1)) if found and os.environ.get("RG_NO_FLIP_LIVE") is None else None
+        self.flip_live_at = int(found.group(1)) if found else None
 
     # ------------------------------------------------------------ one arena (accuracy)
 
@@ -106,6 +107,8 @@ class RocketGPU(Adapter):
         rp, rs = self.rp, self.rs
         cfg = c.get("config")
         if not cfg:
+            if c.get("game_car") == "BATMOBILE":
+                return rs.CAR_CONFIG_BATMOBILE
             return getattr(rs, PRESET.get(c["preset"], "CAR_CONFIG_OCTANE"))
         return self._obj(dict(cfg, __type__="CarConfig"))
 
@@ -269,6 +272,13 @@ class RocketGPU(Adapter):
             for p in a.get_boost_pads():
                 s = p.get_state()
                 s.is_active, s.cooldown, s.cur_locked_car_id, s.prev_locked_car_id, s.pickup_frac_q = 1, 0.0, 0, 0, 32768
+                p.set_state(s)
+        if st.get("pads_from_recording"):
+            # on the suite's rows pads come only from the recording (its credits, after each tick), as for every
+            # simulator: its own pickups off, every pad taken with a cooldown that never runs out
+            for p in a.get_boost_pads():
+                s = p.get_state()
+                s.is_active, s.cooldown = 0, 1e9
                 p.set_state(s)
         arena["pads_from_recording"] = bool(st.get("pads_from_recording"))
 

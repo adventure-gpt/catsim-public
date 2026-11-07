@@ -122,7 +122,7 @@ class RocketSimV2(Adapter):
         rs = self.rs
         for car, r in zip(arena["cars"], inputs):
             if r[8] < 0.5:
-                car.set_controls(rs.CarControls(steer=float(r[1])))
+                car.set_controls(rs.CarControls())       # the game holds it: no controls at all
             else:
                 car.set_controls(rs.CarControls(float(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]),
                                                 bool(r[5] > 0.5), bool(r[6] > 0.5), bool(r[7] > 0.5)))

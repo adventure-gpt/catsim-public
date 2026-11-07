@@ -15,6 +15,10 @@ simbench_kit = { path = "../kit" }
 rlmax = { git = "https://github.com/akaAMAZING/RLMAX", rev = "df9b37b73b7a4ef6154af4b3cfe42cc8ae0ac6a3" }
 serde_json = "1"
 
+[features]
+# RLMAX's own test-only full-state loader (a build of its own: pads come only from the recording), for the suite's full start
+full_state = ["rlmax/full_state"]
+
 [workspace]
 
 # RLMAX's own release settings (its workspace Cargo.toml)

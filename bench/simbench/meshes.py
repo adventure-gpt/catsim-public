@@ -6,7 +6,8 @@ simulator here.
 The dumper writes each arena piece in its own frame and its placement in `soccar/arena.txt`; RocketSim's mesh files
 (from RLArenaCollisionDumper) hold the goal pieces already moved to their goal. This moves them the same way and checks
 every file against the SHA-256 that RocketSim's dumper gives on the same game build (listed below): a file that doesn't
-match is reported, never used silently.
+match is reported, never used silently. Beside each moved goal piece it also writes `mesh_N.local`, the piece's own
+vertices as the game holds them (little-endian f32 x, y, z per vertex), which RLMAX's loader reads; the others ignore it.
 """
 from __future__ import annotations
 
@@ -55,6 +56,10 @@ def convert(data: Path, out: Path) -> list[str]:
         nt, nv = struct.unpack_from("<ii", raw, 0)
         head = raw[:8 + nt * 12]
         v = np.frombuffer(raw, np.float32, nv * 3, 8 + nt * 12).reshape(nv, 3).copy()
+        if any(x != 0.0 for x in t):
+            # the piece in its own frame, as the package holds it, for simulators that read it (RLMAX's mesh_N.local):
+            # the world floats above have lost its low bits
+            (dst / f"mesh_{i}.local").write_bytes(v.astype("<f4").tobytes())
         for k in range(3):
             if t[k] != 0.0:
                 # RocketSim's files hold the goals 2 float steps nearer the middle than the package's 5120 uu placement

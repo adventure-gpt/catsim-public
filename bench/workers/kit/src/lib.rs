@@ -25,6 +25,9 @@ pub struct CarSpec {
     /// The car's whole configuration when the benchmark has it (the full-state suite's `CarConfig`: hitbox, wheels,
     /// spawn height), for simulators that take a configuration rather than a preset.
     pub config: Option<Value>,
+    /// The game's own name for a car whose body RocketSim's presets fold into another (the Batmobile, as RocketSim's Plank),
+    /// for simulators that keep them apart.
+    pub game_car: Option<String>,
 }
 
 /// What the harness prints about the simulator, and which benchmarks it can run (see the Python kit's `Adapter`).
@@ -115,6 +118,7 @@ pub fn cars_of(v: &Value) -> Vec<CarSpec> {
         body: c.get("body").and_then(Value::as_u64).map(|x| x as u32),
         team: c["team"].as_u64().unwrap_or(0) as u8,
         config: c.get("config").cloned(),
+        game_car: c.get("game_car").and_then(Value::as_str).map(str::to_string),
     }).collect()).unwrap_or_default()
 }
 

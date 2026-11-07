@@ -7,6 +7,8 @@
 //! Accuracy: one `cpu::Arena` (RLMAX's CPU build of the same physics) from `from_physical` with every CarState field
 //! the level gives (flags, flip torque, jump ticks, clocks, bump and extra-hit gates); the contact manifolds, broadphase
 //! pairs and pad timers start empty, as its docs say. Needs a CUDA toolkit and RLMAX_CUDA_PATH to build.
+//! With this crate's feature `full_state` (RLMAX's own test-only loader; pads then come only from the recording, as the suite
+//! runs them) it also takes the suite's full state: full.rs. RLMAX_CPU_ONLY=1 builds that without the card's kernels.
 
 use rlmax::cpu::{self, flags, Arena, ArenaData, BallState, BodyState, CarState, Controls};
 use rlmax::driver::{Buffer, Device};
@@ -17,6 +19,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
 
+#[cfg(feature = "full_state")]
+mod full;
 const RLMAX_REV: &str = "df9b37b73b";
 
 struct Rlmax {
@@ -159,11 +163,13 @@ impl Sim for Rlmax {
             about: "RLMAX over its crate: GpuBatch::decide on the card for speed, its CPU build for accuracy".into(),
             device: "gpu",
             units: "bt",
-            caps: json!({"levels": ["packet", "v3"], "frame_timing": false, "game_flow": false, "rng_stream": false, "spot_choices": false, "threads": true, "actions": true, "tick_frames": true}),
+            caps: json!({"levels": if cfg!(feature = "full_state") { vec!["full", "v3", "packet"] } else { vec!["packet", "v3"] }, "frame_timing": false, "game_flow": false, "rng_stream": false, "spot_choices": false, "threads": true, "actions": true, "tick_frames": true}),
             choices: vec![
                 "speed: GpuBatch::decide (one action-table row per car, 8 ticks) then extract into a device buffer; arenas whose ball goes in reset (its training path)".into(),
                 "accuracy: its CPU build, cpu::Arena::from_physical with every CarState field the level gives; manifolds, broadphase pairs and pad timers start empty".into(),
-                "its full-state loader (the suite's level A) is a test-only feature of its crate, not used here".into(),
+                "the suite's rows: a CPU build with the crate's test-only feature `full_state`, where pads come only from the recording, as the suite gives them; full state through its own loader: the public row through from_physical, then the bodies, hidden scalars, wheel contacts, manifolds, visit order and broadphase the suite records".into(),
+                "a car the game holds: its undriven control (the throttle stays, no engine, no brakes), the wheels straight".into(),
+                "the goal's pieces from mesh_N.local beside each mesh (the game's own vertices for them, which its loader reads)".into(),
                 "whole games: a start (every car given) through from_physical; a respawn or a float-precision sync through set_car / set_ball onto the arena's own state, the game's basis words through set_body_basis; each tick's render fraction through set_pad_frame_fraction".into(),
             ],
         }
@@ -179,7 +185,7 @@ impl Sim for Rlmax {
         // an arena of a car count RLMAX has no layout for (it holds 1v1 to 3v3): this segment fails, the worker goes on
         let n = cars.len() as u32;
         let a = std::panic::catch_unwind(|| Arena::new(n)).map_err(|_| format!("RLMAX has no arena for {n} cars"))?;
-        Ok(RArena { a, presets: cars.iter().map(|c| preset(&c.preset)).collect(),
+        Ok(RArena { a, presets: cars.iter().map(|c| if c.game_car.as_deref() == Some("BATMOBILE") { 6 } else { preset(&c.preset) }).collect(),
                     teams: cars.iter().map(|c| c.team as u32).collect(), pads_from_recording: false, started: false })
     }
 
@@ -232,12 +238,35 @@ impl Sim for Rlmax {
         let cs: Vec<CarState> = cars.iter().enumerate().map(|(i, c)| car_state(c, ra.teams[i], ra.presets[i], next.and_then(|n| n.get(i)))).collect();
         ra.a = Arena::from_physical(self.data(), &ball_state(&st["ball"]), &cs);
         ra.started = true;
+        // the wheels the state says touched last tick (from_physical takes all four), its own call for that
+        for (i, c) in cars.iter().enumerate() {
+            let c = v3_from_packet(c);
+            if let Some(w) = c.get("wheels_contact").and_then(Value::as_array) {
+                let mask = (0..4).fold(0u32, |m, k| if w.get(k).is_some_and(|x| x.as_bool().unwrap_or(false)) { m | 1 << k } else { m });
+                ra.a.refresh_sticky_gate_with_wheels(self.data(), i as u32, mask);
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "full_state")]
+    fn set_full_state(&self, ra: &mut RArena, req: &Value, data: &[u8]) -> Result<(), String> {
+        let start = &req["start"];
+        let cars = start["cars"].as_array().ok_or("state needs cars")?;
+        let next = start.get("next_controls").and_then(Value::as_array);
+        let cs: Vec<CarState> = cars.iter().enumerate().map(|(i, c)| car_state(c, ra.teams[i], ra.presets[i], next.and_then(|n| n.get(i)))).collect();
+        ra.a = Arena::from_physical(self.data(), &ball_state(&start["ball"]), &cs);
+        ra.started = true;
+        ra.pads_from_recording = true;
+        full::Full::new(&start["full"], data).apply(&mut ra.a, self.data(), req)?;
         Ok(())
     }
 
     fn step(&self, ra: &mut RArena, inp: &[[f32; TICK_CAR]], ticks: u32, _frame: Option<[f32; 2]>) {
         for (i, r) in inp.iter().enumerate() {
-            let c = if r[8] < 0.5 { Controls { steer: r[1], ..Controls::default() } } else {
+            // a car the game holds: RLMAX's own undriven control (the throttle stays but the engine gets none and nothing
+            // brakes), the wheels straight, and a jump button held through it (`jump` bit 1)
+            let c = if r[8] < 0.5 { Controls { throttle: r[0], steer: 0.0, jump: 4 | if r[5] > 0.5 { 2 } else { 0 }, ..Controls::default() } } else {
                 Controls { throttle: r[0], steer: r[1], pitch: r[2], yaw: r[3], roll: r[4], jump: (r[5] > 0.5) as u32, boost: (r[6] > 0.5) as u32, handbrake: (r[7] > 0.5) as u32 }
             };
             ra.a.set_controls(i as u32, &c);

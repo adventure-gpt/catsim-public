@@ -473,8 +473,8 @@ def run(worker, rec: dict, units: str, fview: np.ndarray | None = None, births: 
     nc = int(meta["cars"])
     ops = rec.get("ops_C") or rec.get("ops")
     arena_op = next(o for o in ops if o[0] == "arena")
-    cars = [{"preset": PRESET_OF_BODY.get(int(c["body"]), "Octane"), "body": int(c["body"]), "team": int(c["team"])}
-            for c in arena_op[1]["cars"]]
+    cars = [{"preset": PRESET_OF_BODY.get(int(c["body"]), "Octane"), "body": int(c["body"]), "team": int(c["team"]),
+             **({"game_car": "BATMOBILE"} if int(c["body"]) == 803 else {})} for c in arena_op[1]["cars"]]
     hdr, _ = worker.request({"op": "new", "cars": cars, "map": meta["map"]})
     arena = hdr["arena"]
     tc, tb, ph = rec["truth_cars"], rec["truth_ball"], rec["truth_phase"]

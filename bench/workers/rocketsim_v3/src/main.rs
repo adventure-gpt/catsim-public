@@ -3,7 +3,7 @@
 //! Its choices, printed with every result: every field of v3's `CarState` the level gives is set through
 //! `edit_car_state_full` (the previous controls and the contact flags through the state's own setters); the ball through
 //! `edit_ball_state`, put to sleep with `sleep_ball` when asleep; pads by nearest location. A car held by the game (may
-//! not drive) gets no controls but its steer. Pad pickups on accuracy runs come from the recording; on speed runs from
+//! not drive) gets no controls. Pad pickups on accuracy runs come from the recording (its own pickups off); on speed runs from
 //! v3's own pad rule. Release build with v3's own profile (lto, one codegen unit, abort on panic), default arena
 //! settings (`ArenaMemWeightMode::Balanced`).
 
@@ -201,6 +201,13 @@ impl Sim for V3 {
                 va.a.edit_boost_pad_state(k, |s| s.cooldown = 0.0);
             }
         }
+        if va.pads_from_recording {
+            // on the suite's rows pads come only from the recording (its credits), as for every simulator: v3's own
+            // pickups off, every pad taken with a cooldown that never runs out
+            for k in 0..va.a.num_boost_pads() {
+                va.a.edit_boost_pad_state(k, |s| s.cooldown = 1e9);
+            }
+        }
         Ok(())
     }
 
@@ -208,7 +215,7 @@ impl Sim for V3 {
         for (k, r) in inp.iter().enumerate() {
             let mut c = controls(&r[..8]);
             if r[8] < 0.5 {
-                c = CarControls { steer: c.steer, ..CarControls::default() };
+                c = CarControls::default();
             }
             va.a.set_car_controls(va.ids[k], c);
         }
