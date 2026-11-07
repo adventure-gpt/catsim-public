@@ -1063,7 +1063,6 @@ def subtitle(recs) -> str:
         return "The same tests for every simulator."
     speed = [r["machine"] for r in recs if r.get("kind") == "speed" and r.get("machine")]
     if speed and len({short_machine(x) for x in ms}) > 1:
-        when = max((r.get("when", "")[:10] for r in recs), default="")
         with_card = next((x for x in speed if x.get("gpus")), speed[0])
         cpu = re.sub(r"\(R\)|\(TM\)|CPU|@.*|\d+th Gen ", "", with_card["cpu"]).strip()
         gpu = next((g.split(",")[0].replace("NVIDIA GeForce ", "") for g in (with_card.get("gpus") or [])), None)
