@@ -26,8 +26,8 @@ The same tests for every simulator. Speed: Intel Core i7-11700K (16 threads), RT
 | test | catSim | RocketGPU (CPU) | RocketGPU (CUDA) | RocketSim v3 | RocketSim v2 | RLMAX |
 |---|---|---|---|---|---|---|
 | Started from the game's full internal state<br><sub>physics only: nothing to guess</sub> | **100%** of body-ticks exact | **100%** of body-ticks exact | **100%** of body-ticks exact, measured on the test split (10 of 144 recordings); 100% on all 144 per the suite's own published result | **—** can't load the full state | **—** can't load the full state | **100%** of body-ticks exact; scored on 14.2M of 14.7M body-ticks (753 segments it couldn't run) |
-| Started from the public state<br><sub>what a packet shows + RocketSim v3's timers; the rest is guessed</sub> | **90.73%** 92.82% within tolerance | **96.65%** 97.38% within tolerance | **96.44%** 97.54% within tolerance; measured on 42 of 144 recordings; identical to its CPU build on every recording both ran | **4.47%** 86.30% within tolerance | **—** can't take this start state | **98.21%** 97.97% within tolerance; scored on 14.2M of 14.7M body-ticks (753 segments it couldn't run) |
-| Started from packet fields only<br><sub>only what an RLBot packet lists</sub> | **74.32%** 67.06% within tolerance | **78.91%** 70.12% within tolerance | **82.09%** 80.25% within tolerance; measured on 10 of 144 recordings; identical to its CPU build on every recording both ran | **3.07%** 64.22% within tolerance | **—** can't take this start state | **81.24%** 78.00% within tolerance; scored on 14.2M of 14.7M body-ticks (753 segments it couldn't run) |
+| Started from the public state<br><sub>what a packet shows + RocketSim v3's timers; the rest is guessed</sub> | **90.73%** 92.82% within tolerance | **96.65%** 97.38% within tolerance | **96.65%** 97.38% within tolerance | **4.47%** 86.30% within tolerance | **—** can't take this start state | **98.21%** 97.97% within tolerance; scored on 14.2M of 14.7M body-ticks (753 segments it couldn't run) |
+| Started from packet fields only<br><sub>only what an RLBot packet lists</sub> | **74.32%** 67.06% within tolerance | **78.91%** 70.12% within tolerance | **78.91%** 70.12% within tolerance | **3.07%** 64.22% within tolerance | **—** can't take this start state | **81.24%** 78.00% within tolerance; scored on 14.2M of 14.7M body-ticks (753 segments it couldn't run) |
 | RocketSim's own replay test<br><sub>rlpr_metric, unchanged; 120-tick segments</sub> | **97.46%** of car-ticks within tolerance; mean error 1.25 | **—** its adapter can't take an RLPR tick record | **—** its adapter can't take an RLPR tick record | **97.76%** of car-ticks within tolerance; mean error 0.63 | **—** its adapter can't take an RLPR tick record | **—** its adapter can't take an RLPR tick record |
 
 - catSim's whole games run through catSim (Python), its binding that runs whole matches.
@@ -380,23 +380,23 @@ Scored: every car and the ball every tick (up to 120 ticks a segment): bit-exact
 | RocketSim v3 | 4.4680% | 0.000% | 86.304% | 0.8095 / 0.6288 / 1.5724 | 14,678,660 | 26,378 |
 | RocketSim v2 (Python) | not supported: its adapter can't take the v3 start state | | | | | |
 | RocketGPU (CPU) | 96.6458% | 84.252% | 97.376% | 0.1165 / 0.2007 / 0.2718 | 14,678,660 | 26,378 |
-| RocketGPU (CUDA) | 96.4424% | 84.446% | 97.544% | 0.1432 / 0.1778 / 0.2594 | 7,560,112 | 14,112 |
+| RocketGPU (CUDA) | 96.6458% | 84.252% | 97.376% | 0.1165 / 0.2007 / 0.2718 | 14,678,660 | 26,378 |
 | RLMAX | 98.2141% | 90.067% | 97.968% | 0.1130 / 0.1633 / 0.2093 | 14,220,028 | 25,843 |
 
 Exact body-ticks by the suite's splits:
 
 | split | catSim | RocketSim v3 | RocketGPU (CPU) | RocketGPU (CUDA) | RLMAX |
 |---|---:|---:|---:|---:|---:|
-| bodies | 84.188% | 19.137% | 96.897% | - | 98.007% |
+| bodies | 84.188% | 19.137% | 96.897% | 96.897% | 98.007% |
 | body_psyclops | 89.616% | 6.765% | 96.541% | 96.541% | 97.591% |
-| camp | 96.657% | 14.286% | 98.487% | - | 98.709% |
-| dev | 90.403% | 1.811% | 96.462% | 96.456% | 98.431% |
-| h1 | 90.192% | 2.044% | 96.203% | - | 98.089% |
-| h2 | 89.174% | 3.090% | 95.449% | - | 97.361% |
-| pads | 89.039% | 7.223% | 94.848% | - | 97.743% |
-| scn | 90.054% | 8.148% | 95.908% | - | 97.025% |
+| camp | 96.657% | 14.286% | 98.487% | 98.487% | 98.709% |
+| dev | 90.403% | 1.811% | 96.462% | 96.462% | 98.431% |
+| h1 | 90.192% | 2.044% | 96.203% | 96.203% | 98.089% |
+| h2 | 89.174% | 3.090% | 95.449% | 95.449% | 97.361% |
+| pads | 89.039% | 7.223% | 94.848% | 94.848% | 97.743% |
+| scn | 90.054% | 8.148% | 95.908% | 95.908% | 97.025% |
 | test | 89.916% | 2.795% | 96.379% | 96.379% | 98.438% |
-| uneven | 94.625% | 4.948% | 98.308% | - | 99.016% |
+| uneven | 94.625% | 4.948% | 98.308% | 98.308% | 99.016% |
 
 ### Started from packet fields only
 
@@ -410,23 +410,23 @@ Scored: every car and the ball every tick (up to 120 ticks a segment): bit-exact
 | RocketSim v3 | 3.0679% | 0.000% | 64.221% | 1.4658 / 2.8276 / 3.8231 | 14,678,660 | 26,378 |
 | RocketSim v2 (Python) | not supported: its adapter can't take the packet start state | | | | | |
 | RocketGPU (CPU) | 78.9113% | 40.412% | 70.119% | 0.8182 / 2.5332 / 3.0822 | 14,678,660 | 26,378 |
-| RocketGPU (CUDA) | 82.0912% | 48.602% | 80.254% | 0.6401 / 1.4937 / 2.0718 | 1,616,219 | 3,218 |
+| RocketGPU (CUDA) | 78.9113% | 40.412% | 70.119% | 0.8182 / 2.5332 / 3.0822 | 14,678,660 | 26,378 |
 | RLMAX | 81.2439% | 45.107% | 78.000% | 0.7607 / 1.7097 / 2.2754 | 14,220,028 | 25,843 |
 
 Exact body-ticks by the suite's splits:
 
 | split | catSim | RocketSim v3 | RocketGPU (CPU) | RocketGPU (CUDA) | RLMAX |
 |---|---:|---:|---:|---:|---:|
-| bodies | 70.182% | 6.703% | 82.221% | - | 95.726% |
-| body_psyclops | 71.225% | 6.763% | 75.845% | - | 76.467% |
-| camp | 96.657% | 14.286% | 98.194% | - | 98.375% |
-| dev | 72.827% | 1.811% | 77.453% | - | 78.547% |
-| h1 | 75.256% | 2.043% | 79.727% | - | 81.030% |
-| h2 | 70.557% | 1.545% | 75.494% | - | 78.269% |
-| pads | 75.954% | 7.223% | 77.447% | - | 79.535% |
-| scn | 61.439% | 1.302% | 65.281% | - | 75.347% |
+| bodies | 70.182% | 6.703% | 82.221% | 82.221% | 95.726% |
+| body_psyclops | 71.225% | 6.763% | 75.845% | 75.845% | 76.467% |
+| camp | 96.657% | 14.286% | 98.194% | 98.194% | 98.375% |
+| dev | 72.827% | 1.811% | 77.453% | 77.453% | 78.547% |
+| h1 | 75.256% | 2.043% | 79.727% | 79.727% | 81.030% |
+| h2 | 70.557% | 1.545% | 75.494% | 75.494% | 78.269% |
+| pads | 75.954% | 7.223% | 77.447% | 77.447% | 79.535% |
+| scn | 61.439% | 1.302% | 65.281% | 65.281% | 75.347% |
 | test | 77.052% | 2.795% | 82.091% | 82.091% | 83.293% |
-| uneven | 84.924% | 4.943% | 88.099% | - | 87.623% |
+| uneven | 84.924% | 4.943% | 88.099% | 88.099% | 87.623% |
 
 ### RocketSim's own replay test (rlpr_metric)
 
