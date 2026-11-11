@@ -90,6 +90,40 @@ def test_goal_callback(rs):
     assert goals and goals[0] == (rs.Team.BLUE, "x")
 
 
+def test_cars_drive_after_a_goal_until_the_countdown(rs):
+    """With round_flow the 3 s after a goal take input, as in the game; the kickoff countdown after them doesn't."""
+    a = rs.Arena(round_flow=True)
+    blue = a.add_car(rs.Team.BLUE, rs.CarConfig(rs.CarConfig.OCTANE))
+    a.add_car(rs.Team.ORANGE, rs.CarConfig(rs.CarConfig.DOMINUS))
+    a.use_game_countdown()                       # a countdown long enough to watch (a 1 s start, then 3, 2, 1)
+    a.ball.set_state(rs.BallState(rs.Vec(0, 5300, 300), rs.Vec(0, 500, 0)))   # just inside orange's net
+    a.step(1)
+    r = a.get_round()
+    assert a.score == (1, 0) and r.phase == 2 and abs(r.phase_left - 3.0) < 1e-6
+    start = blue.get_state()
+    blue.set_controls(rs.CarControls(throttle=1.0, jump=True, boost=True))
+    a.step(36)
+    s = blue.get_state()
+    assert a.get_round().phase == 2 and blue.get_hidden().driving
+    assert s.pos.z > start.pos.z + 50 and s.boost < start.boost          # it jumped and boosted
+    ticks = 36
+    while a.get_round().phase == 2:
+        a.step(1)
+        ticks += 1
+    assert ticks == 360                          # the window is 3 s
+    assert a.get_round().phase == 0 and not any(c.get_hidden().driving for c in a.get_cars())
+    twin = a.copy()                              # the same arena with no input (the cars drop onto their spots)
+    for c in twin.get_cars():
+        c.set_controls(rs.CarControls())
+    a.step(120)                                  # jump, boost and throttle still held in `a`
+    twin.step(120)
+    assert a.get_round().phase == 0
+    mine, other = blue.get_state(), twin.get_cars()[0].get_state()
+    # not bit for bit: the held throttle still reaches the tire friction model, a few 1e-7 uu/s
+    assert (mine.pos - other.pos).length() < 0.01 and (mine.vel - other.vel).length() < 0.01
+    assert mine.boost == other.boost and not blue.get_hidden().jump.active
+
+
 def test_car_configs(rs):
     sizes = {n: rs.CarConfig(n).hitbox_size for n in ("Octane", "MuscleCar", "Darkcar", "LongCar", "Hybrid", "Merc")}
     assert sizes["Octane"].x == pytest.approx(120.507, abs=1e-3)

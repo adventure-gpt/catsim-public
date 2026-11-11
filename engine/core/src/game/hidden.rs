@@ -67,7 +67,7 @@ pub struct WheelHidden {
 /// A car's hidden state. Times are seconds; `*_frame` fields are the arena's physics frame numbers.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct CarHidden {
-    /// The car takes input (off during a countdown and after a goal).
+    /// The car takes input (off during a kickoff countdown; on through the post-goal time, as in the game).
     pub driving: bool,
     pub on_ground: bool,
     /// The game's own jump flags (cleared on landing).

@@ -541,7 +541,7 @@ impl NativeArena {
         Ok(())
     }
 
-    /// Car `i` takes input or not (the game turns it off during countdowns and after goals).
+    /// Car `i` takes input or not (the game turns it off during kickoff countdowns; the 3 s after a goal take input).
     fn set_driving(&mut self, i: usize, on: bool) -> PyResult<()> {
         self.check_car(i)?;
         if let Some(c) = self.slot.arena.players[i].car.as_mut() {

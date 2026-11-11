@@ -71,6 +71,9 @@ point `init` at `catsim_data` instead of `collision_meshes`.
   callbacks, boost pads, every car body and hitbox preset, and ball prediction. Two maps' layouts: Stadium_P
   (the standard soccar arena) and UF_Night_P. See [docs/API.md](docs/API.md), which also lists every difference
   from RocketSim.
+- **The game's round flow** with `Arena(round_flow=True)`: goals, the 3 seconds after a goal (the cars still
+  drive, as in the game) and the kickoff countdown. [examples/post_goal_window.py](examples/post_goal_window.py)
+  trains on the post-goal window, e.g. for goal celebrations.
 - **The game's own frame loop and random numbers**, for replaying real games: frames with their real duration,
   and a model of everything that draws from the game's random-number stream (animated car parts and map parts,
   effects, the camera), so kickoff spawn choices come out as in the game. It reads which parts your cars' items

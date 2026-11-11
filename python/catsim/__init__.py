@@ -528,7 +528,7 @@ class Car:
         self._arena._native_arena().set_car_demolished(self._slot, float(respawn_in))
 
     def set_driving(self, on: bool) -> None:
-        """Whether the car takes input (the game turns it off during countdowns and after goals)."""
+        """Whether the car takes input (the game turns it off during kickoff countdowns; the 3 s after a goal take input)."""
         self._arena._native_arena().set_driving(self._slot, bool(on))
 
     def add_boost(self, amount: float) -> None:

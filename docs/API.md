@@ -35,6 +35,14 @@ with its own pad heights and no planes behind the goals). `Arena(round_flow=True
 explosion, post-goal time and kickoff restart; with it off, the arena waits after a goal until you call
 `reset_kickoff()`.
 
+**After a goal the cars keep driving.** As in the game, the 3 seconds after a goal take input: the ball is gone (the
+goal explosion), `arena.get_round().phase` is 2 and `phase_left` counts down from 3.0 seconds, and every car
+drives, jumps, dodges and boosts as usual. Input is off only during a kickoff countdown (phase 0), including the
+one that follows a goal. `round_flow=True` is what runs this window and the restart after it; with it off, the
+arena stays in phase 2 (no ball, cars still driving) until you call `reset_kickoff()`.
+[examples/post_goal_window.py](../examples/post_goal_window.py) trains on that window over and over (goal
+celebrations), starting each episode at a goal.
+
 ## Replaying real games: frames and the game's random numbers
 
 The game runs physics inside an application frame loop: a frame of real duration takes 0, 1 or more 1/120 s
@@ -101,7 +109,7 @@ pad.get_timer(), pad.set_timer(taken, length, elapsed)   # a boost pad's timer e
 
 | Field | What it is |
 |---|---|
-| `driving` | the car takes input (off during a countdown and after a goal) |
+| `driving` | the car takes input; off during a kickoff countdown (including the one after a goal), on through the 3 s after a goal as in the game |
 | `on_ground`, `supersonic`, `supersonic_time` | the game's flags; seconds below supersonic speed while still counted supersonic |
 | `jumped`, `double_jumped` | the game's own jump flags (set by a jump, a double jump or a dodge; cleared on landing) |
 | `jump`, `jump_released` | the jump component, and whether the button was let go during it |
@@ -182,7 +190,7 @@ bench/simbench/game.py and bench/adapters/catsim_py.py (`game`) use them.
 | Setting a car's rotation | Exact matrix | Goes through the game's integer rotator (65536 units a turn), like the game's own state setting | Matches what the real game does when a state is set |
 | Setting boost | Float | Rounded down to a whole number, 0 to 100 | Same as the game's state setting |
 | Ball set at rest | Stays awake | `set_state(state, sleep_at_rest=True)` makes it sleep at once, like the game | Optional, default off |
-| Goals | Reported; nothing else happens | Reported, and the goal explosion removes the ball as in the game; the arena waits for `reset_kickoff()`. With `Arena(round_flow=True)` the game's own post-goal time and restart run | |
+| Goals | Reported; nothing else happens | Reported, and the goal explosion removes the ball as in the game; the arena waits for `reset_kickoff()`. With `Arena(round_flow=True)` the game's own post-goal time (3 s, the cars still take input) and restart run | |
 | Maps | Soccar arena | Stadium_P and UF_Night_P | The two maps the engine has been checked on |
 | `car.demolish()` | Available | Not available | Demolitions happen only through the game's rules |
 | `get_gym_state()` and other array helpers | Some bindings have them | Not yet | |
